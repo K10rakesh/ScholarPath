@@ -18,6 +18,7 @@ from backend.schemas_member2 import (
     ClaimsOverviewItem,
     RoadmapSummary,
     TrustReport,
+    TrustStatus,
     VerifiedClaimSummary,
     TrustReportSummary,
     RoadmapConstraints,
