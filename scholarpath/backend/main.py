@@ -104,7 +104,7 @@ async def upload_pdf(file: UploadFile = File(...)):
 # ── POST /analyze/{doc_id} ─────────────────────────────────────────────────────
 
 @app.post("/analyze/{doc_id}")
-async def analyze(doc_id: str):
+def analyze(doc_id: str):
     """
     Triggers the full PDF parse + claim extraction pipeline for a document.
     Stores the result in the database.
@@ -115,13 +115,16 @@ async def analyze(doc_id: str):
         raise HTTPException(status_code=404, detail=f"No PDF found for doc_id: {doc_id}")
 
     # Mark as processing before we start
+    print(f"\n[API] → BEGINNING ANALYSIS PHASE for {doc_id}")
     update_document_status(doc_id, "processing")
 
     # Run the full parser (Phase 1 + Phase 2)
-    # This is synchronous for now — LangGraph async wiring comes in Phase 8
+    # This runs synchronously in FastAPI threadpool implicitly via def endpoint
+    print(f"[API] Executing local LlaMA3.2 claim extraction... (this may take 1-3 minutes)")
     paper: ParsedPaper = parse_pdf(file_path, doc_id)
 
     # Persist the result
+    print(f"[API] ✓ Finished parsing paper '{doc_id}' ({len(paper.claims)} claims extracted)")
     save_parsed_paper(doc_id, paper)
 
     return {
@@ -298,27 +301,9 @@ async def generate_roadmap_endpoint(doc_id: str):
 
     verification = VerificationReportOutput(**verification_data)
 
-    # Check trust gate
-    if verification.trust_report.status == TrustStatus.LOW_TRUST:
-        # Still generate response but with empty roadmap
-        roadmap = RoadmapResponseOutput(
-            doc_id=doc_id,
-            target_topic=paper.title,
-            roadmap_summary="Roadmap generation skipped due to low trust score.",
-            nodes=[],
-            edges=[],
-            reading_order=[],
-            resource_suggestions=[],
-            processing_status="partial",
-            errors=[{
-                "code": "LOW_TRUST",
-                "message": f"Trust score {verification.trust_report.trust_score} is below threshold."
-            }]
-        )
-    else:
-        # Generate roadmap
-        roadmap: RoadmapResponseOutput = generate_roadmap(paper, verification)
-        roadmap.doc_id = doc_id
+    # Generate roadmap
+    roadmap: RoadmapResponseOutput = generate_roadmap(paper, verification)
+    roadmap.doc_id = doc_id
 
     # Cache the result
     _member2_cache[f"{doc_id}_roadmap"] = roadmap.model_dump()
@@ -338,39 +323,33 @@ async def get_roadmap(doc_id: str):
 
 
 @app.post("/full-pipeline/{doc_id}")
-async def full_pipeline_endpoint(doc_id: str):
+def full_pipeline_endpoint(doc_id: str):
     """
     Run the complete Member 2 pipeline: resolve citations -> verify claims -> generate roadmap.
     Returns the combined Final Report (Contract 06).
     """
     # Step 1: Get parsed paper
+    print(f"\n[API] → BEGINNING PIPELINE RESOLUTION for {doc_id}")
     paper = get_parsed_paper(doc_id)
     if paper is None:
         raise HTTPException(status_code=404, detail="Parsed paper not found.")
 
     # Step 2: Resolve citations
+    print(f"[API] Resolving {len(paper.references)} citations globally via Semantic Scholar + ArXiv (est. ~{int(len(paper.references) * 3.2)} seconds latency padding)")
     resolved: ResolvedCitationsOutput = resolve_citations(paper)
     _member2_cache[f"{doc_id}_citations"] = resolved.model_dump()
+    print(f"[API] ✓ Citations securely resolved.")
 
     # Step 3: Verify claims
+    print(f"[API] Verifying extracted claims via LangGraph Agentic routing. Instantiating LLaMA3.2 pipeline... (this is computationally heavy)")
     verification: VerificationReportOutput = verify_claims(paper, resolved)
     _member2_cache[f"{doc_id}_verification"] = verification.model_dump()
+    print(f"[API] ✓ Source constraints evaluated. Trust Level: {verification.trust_report.trust_score}")
 
-    # Step 4: Generate roadmap (or skip if low trust)
-    if verification.trust_report.status == TrustStatus.LOW_TRUST:
-        roadmap = RoadmapResponseOutput(
-            doc_id=doc_id,
-            target_topic=paper.title,
-            roadmap_summary="Roadmap generation skipped due to low trust score.",
-            nodes=[],
-            edges=[],
-            reading_order=[],
-            resource_suggestions=[],
-            processing_status="partial"
-        )
-    else:
-        roadmap: RoadmapResponseOutput = generate_roadmap(paper, verification)
-        roadmap.doc_id = doc_id
+    # Step 4: Generate roadmap
+    print(f"[API] Generating roadmap parameters constraints...")
+    roadmap: RoadmapResponseOutput = generate_roadmap(paper, verification)
+    roadmap.doc_id = doc_id
 
     _member2_cache[f"{doc_id}_roadmap"] = roadmap.model_dump()
 

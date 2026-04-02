@@ -5,6 +5,7 @@
 import re
 import json
 import httpx
+import os
 import xml.etree.ElementTree as ET
 from typing import TypedDict, List, Optional, Annotated, Literal
 from langchain_ollama import ChatOllama
@@ -71,41 +72,23 @@ class SourceFetcher:
         self.timeout = timeout
 
     def fetch(self, state: VerificationState) -> VerificationState:
-        """Fetch evidence from the cited source"""
+        """Fetch evidence from the cited source. Overwhelmingly relies on the pre-fetched abstract to save extreme network delays."""
         citation = state["resolved_citation"]
 
-        # Priority 1: Try Semantic Scholar if we have paper_id
-        if citation.paper_id and citation.paper_id.startswith("semantic_"):
-            paper_id = citation.paper_id.replace("semantic_", "")
-            evidence = self._fetch_semantic_scholar_paper(paper_id)
-            if evidence:
-                state["fetched_evidence"] = evidence
-                return state
+        # Priority 1: Use pre-resolved abstract avoiding network latency entirely!
+        if citation.abstract and len(citation.abstract.strip()) > 10:
+            state["fetched_evidence"] = citation.abstract
+            return state
 
-        # Priority 2: Try arXiv if we have arxiv_id
-        if citation.paper_id and citation.paper_id.startswith("arxiv_"):
-            arxiv_id = citation.paper_id.replace("arxiv_", "")
-            evidence = self._fetch_arxiv_paper(arxiv_id)
-            if evidence:
-                state["fetched_evidence"] = evidence
-                return state
-
-        # Priority 3: Search by title if we have a matched title
+        # Priority 2: Use matching properties if available
         if citation.matched_title:
-            # Try Semantic Scholar search first
-            evidence = self._search_semantic_scholar(citation.matched_title)
-            if evidence:
-                state["fetched_evidence"] = evidence
+            try:
+                state["fetched_evidence"] = citation.matched_title
                 return state
+            except Exception:
+                pass
 
-            # Fall back to arXiv search
-            evidence = self._search_arxiv(citation.matched_title)
-            if evidence:
-                state["fetched_evidence"] = evidence
-                return state
-
-        # Priority 4: Use abstract as fallback
-        state["fetched_evidence"] = citation.abstract or ""
+        state["fetched_evidence"] = ""
         return state
 
     def _fetch_semantic_scholar_paper(self, paper_id: str) -> Optional[str]:
@@ -257,7 +240,11 @@ class ClaimVerifier:
     """Verifies if a claim is supported by the fetched evidence"""
 
     def __init__(self):
-        self.llm = ChatOllama(model=OLLAMA_MODEL, temperature=0.1)
+        self.llm = ChatOllama(
+            model=OLLAMA_MODEL, 
+            temperature=0.1,
+            base_url=f"http://{os.environ.get('OLLAMA_HOST', '127.0.0.1:11434')}"
+        )
         self.prompt = ChatPromptTemplate.from_messages([
             ("system", """You are an expert academic fact-checker. Your task is to determine whether
             EVIDENCE from a cited paper actually SUPPORTS a CLAIM made in another paper.
@@ -334,66 +321,16 @@ Respond in this exact JSON format:
 
         except Exception as e:
             print(f"[ClaimVerifier] LLM verification error: {e}")
-            # Fallback to heuristic verification
-            state["verification_result"] = self._heuristic_verify(claim_text, evidence)
-            state["confidence_score"] = float(state["verification_result"]["confidence"])
+            # Instead of heuristic verification, we enforce strict agent check failure
+            state["verification_result"] = {
+                "verdict": "insufficient_evidence",
+                "confidence": 0.0,
+                "explanation": "LLM verification agent failed to respond.",
+                "evidence_span": None
+            }
+            state["confidence_score"] = 0.0
 
         return state
-
-    def _heuristic_verify(self, claim_text: str, evidence_text: str) -> dict:
-        """Fallback heuristic verification"""
-        claim_lower = claim_text.lower()
-        evidence_lower = evidence_text.lower()
-
-        # Extract key content words
-        stop_words = {"the", "a", "an", "is", "are", "was", "were", "be", "been",
-                      "being", "have", "has", "had", "do", "does", "did", "will",
-                      "would", "could", "should", "may", "might", "must", "to",
-                      "of", "in", "for", "on", "with", "at", "by", "from", "as",
-                      "into", "through", "during", "before", "after", "above",
-                      "below", "between", "under", "again", "further", "then",
-                      "once", "here", "there", "when", "where", "why", "how",
-                      "all", "each", "few", "more", "most", "other", "some",
-                      "such", "no", "nor", "not", "only", "own", "same", "so",
-                      "than", "too", "very", "just", "and", "but", "if", "or",
-                      "because", "until", "while", "although", "though", "that",
-                      "this", "these", "those", "it", "its", "we", "our", "they"}
-
-        claim_words = set(w for w in claim_lower.split() if w not in stop_words and len(w) > 2)
-        evidence_words = set(w for w in evidence_lower.split() if w not in stop_words and len(w) > 2)
-
-        if not claim_words or not evidence_words:
-            return {
-                "verdict": "insufficient_evidence",
-                "confidence": 0.3,
-                "explanation": "Could not extract meaningful content for comparison.",
-                "evidence_span": None
-            }
-
-        overlap = claim_words & evidence_words
-        overlap_ratio = len(overlap) / max(len(claim_words), 1)
-
-        if overlap_ratio >= 0.4:
-            return {
-                "verdict": "supported",
-                "confidence": min(0.75, 0.5 + overlap_ratio),
-                "explanation": f"Key terms from claim appear in evidence ({int(overlap_ratio * 100)}% keyword overlap).",
-                "evidence_span": None
-            }
-        elif overlap_ratio >= 0.2:
-            return {
-                "verdict": "partially_supported",
-                "confidence": 0.5,
-                "explanation": f"Some key terms overlap but connection is partial ({int(overlap_ratio * 100)}% keyword overlap).",
-                "evidence_span": None
-            }
-        else:
-            return {
-                "verdict": "insufficient_evidence",
-                "confidence": 0.3,
-                "explanation": f"Limited keyword overlap ({int(overlap_ratio * 100)}%).",
-                "evidence_span": None
-            }
 
 
 # =============================================================================

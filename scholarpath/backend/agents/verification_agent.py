@@ -204,8 +204,20 @@ def _verify_claim_legacy(
         response = _call_llm(prompt)
 
         if not response or not response.strip():
-            print(f"[verification_agent] LLM returned empty response, using heuristic fallback")
-            return _verify_claim_heuristic(claim, resolved, verification_index)
+            print(f"[verification_agent] LLM returned empty response, enforcing agent failure")
+            return VerificationResult(
+                verification_id=f"v{verification_index}",
+                claim_id=claim.claim_id,
+                claim_text=claim.claim_text,
+                ref_id=resolved.ref_id,
+                citation_title=resolved.matched_title,
+                resolution_status=resolved.resolution_status,
+                verdict=VerificationVerdict.INSUFFICIENT_EVIDENCE,
+                confidence=0.0,
+                explanation="LLM agent returned an empty response.",
+                evidence_span=None,
+                used_text_source="abstract"
+            )
 
         parsed = _parse_verification_response(response, claim, resolved, evidence_text)
 
@@ -215,7 +227,19 @@ def _verify_claim_legacy(
     except Exception as e:
         print(f"[verification_agent] LLM verification failed: {e}")
 
-    return _verify_claim_heuristic(claim, resolved, verification_index)
+    return VerificationResult(
+        verification_id=f"v{verification_index}",
+        claim_id=claim.claim_id,
+        claim_text=claim.claim_text,
+        ref_id=resolved.ref_id,
+        citation_title=resolved.matched_title,
+        resolution_status=resolved.resolution_status,
+        verdict=VerificationVerdict.INSUFFICIENT_EVIDENCE,
+        confidence=0.0,
+        explanation="LLM failed to verify evidence in legacy mode.",
+        evidence_span=None,
+        used_text_source="abstract"
+    )
 
 
 def _build_verification_prompt(claim_text: str, evidence_text: str) -> str:

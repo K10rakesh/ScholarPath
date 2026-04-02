@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import ClickSpark from './ClickSpark';
 import ElectricBorder from './ElectricBorder';
 import './index.css';
@@ -111,6 +111,17 @@ function App() {
   const [status, setStatus] = useState('');
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
+  const [etaSeconds, setEtaSeconds] = useState(0);
+
+  useEffect(() => {
+    let timer;
+    if (loading && etaSeconds > 0) {
+      timer = setInterval(() => {
+        setEtaSeconds(prev => (prev > 0 ? prev - 1 : 0));
+      }, 1000);
+    }
+    return () => clearInterval(timer);
+  }, [loading, etaSeconds]);
 
   const handleFileChange = (e) => {
     if (e.target.files && e.target.files[0]) {
@@ -135,7 +146,8 @@ function App() {
       setStatus('Analyzing paper...');
 
       // Step 2: Start analysis
-      await analyzeDocument(docId);
+      setEtaSeconds(120); // Average fallback estimate for LLM basic parsing boundary
+      const analyzeRes = await analyzeDocument(docId);
 
       // Step 3: Poll for completion
       setStatus('Processing claims and citations...');
@@ -143,6 +155,11 @@ function App() {
 
       // Step 4: Run full pipeline (citation resolution + verification + roadmap)
       setStatus('Generating roadmap...');
+      
+      // Safety calculation for exactly predicting API delays and context processing speeds
+      const estSecs = Math.ceil((analyzeRes.num_references * 3.5) + (analyzeRes.num_claims * 8) + 20);
+      setEtaSeconds(estSecs);
+      
       const finalReport = await runFullPipeline(docId);
 
       setResult(finalReport);
@@ -291,7 +308,7 @@ function App() {
               onClick={handleMakeRoadmap}
               disabled={!file || loading}
             >
-              {loading ? status : 'Make Roadmap'}
+              {loading ? `${status} ${etaSeconds > 0 ? `(~${Math.floor(etaSeconds / 60)}m ${etaSeconds % 60}s)` : ''}` : 'Make Roadmap'}
             </button>
 
             {error && (

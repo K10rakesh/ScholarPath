@@ -26,10 +26,10 @@ def extract_claims(
     # Build sentence_index → section info lookup
     section_lookup = _build_section_lookup(citation_sentences, sections)
 
-    # Split into batches of 10 (keeps each LLM call manageable)
+    # Split into batches of 5 (keeps each LLM call manageable to prevent JSON truncation)
     batches = [
-        citation_sentences[i:i + 10]
-        for i in range(0, len(citation_sentences), 10)
+        citation_sentences[i:i + 5]
+        for i in range(0, len(citation_sentences), 5)
     ]
 
     all_claims = []
@@ -69,7 +69,7 @@ def _process_batch(
     start_counter: int
 ) -> tuple[list[Claim], int]:
     """
-    Processes one batch of ≤10 sentences.
+    Processes one batch of ≤5 sentences.
     Returns (claims, count_of_valid_claims).
     Retries once on bad JSON. Fails gracefully.
     """
@@ -138,7 +138,8 @@ def _call_llm(prompt: str) -> str:
                 options={
                     "temperature": 0,  # deterministic output
                     "top_p": 0.9,
-                    "timeout": 60000  # 60 second timeout
+                    "timeout": 60000,  # 60 second timeout
+                    "num_predict": 3000
                 }
             )
             content = response["message"]["content"]
@@ -237,7 +238,11 @@ def _parse_response(
 
         # Handle edge case: model returned a single dict instead of array
         if isinstance(data, dict):
-            data = [data]
+            # If it wrapped the array in a parent dictionary e.g. {"claims": [...]}
+            if len(data.keys()) == 1 and isinstance(list(data.values())[0], list):
+                data = list(data.values())[0]
+            else:
+                data = [data]
 
         claims = []
         for i, item in enumerate(data):

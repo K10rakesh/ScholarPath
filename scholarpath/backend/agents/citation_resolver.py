@@ -5,6 +5,7 @@
 import re
 import hashlib
 import httpx
+import time
 from typing import Optional
 from datetime import datetime
 
@@ -52,6 +53,8 @@ def resolve_citations(parsed_paper: ParsedPaper) -> ResolvedCitationsOutput:
 
     for reference in parsed_paper.references:
         try:
+            # Limit carefully to math boundary for S2 free tier (100 req per 5 minutes = 3.0s minimum)
+            time.sleep(3.5)
             resolved_citation = _resolve_single_citation(reference)
             resolved.append(resolved_citation)
         except Exception as e:
@@ -204,66 +207,106 @@ def _extract_title_from_citation(text: str) -> Optional[str]:
     return None
 
 
-def _search_semantic_scholar(title: str) -> Optional[dict]:
+_SS_BACKOFF_UNTIL = 0
+_ARXIV_BACKOFF_UNTIL = 0
+
+def _search_semantic_scholar(title: str, max_retries: int = 2) -> Optional[dict]:
     """
     Search Semantic Scholar API for a paper by title.
     Returns paper metadata if found, None otherwise.
     """
-    try:
-        # Use exact title match first
-        params = {
-            "query": title[:200],  # API has length limits
-            "limit": 3,
-            "fields": "title,authors,publicationDate,abstract,externalIds,paperId"
-        }
+    global _SS_BACKOFF_UNTIL
+    if time.time() < _SS_BACKOFF_UNTIL:
+        return None
 
-        with httpx.Client(timeout=API_TIMEOUT, follow_redirects=True) as client:
-            response = client.get(SEMANTIC_SCHOLAR_SEARCH_URL, params=params)
-            response.raise_for_status()
-            data = response.json()
+    # Use exact title match first
+    params = {
+        "query": title[:200],  # API has length limits
+        "limit": 3,
+        "fields": "title,authors,publicationDate,abstract,externalIds,paperId"
+    }
 
-            if data.get("data"):
-                # Return the best match
-                return data["data"][0]
+    for attempt in range(max_retries):
+        try:
+            with httpx.Client(timeout=API_TIMEOUT, follow_redirects=True) as client:
+                response = client.get(SEMANTIC_SCHOLAR_SEARCH_URL, params=params)
+                
+                if response.status_code == 429:
+                    print(f"[citation_resolver] Semantic Scholar rate limit hit (429). Retrying in {2 ** attempt}s...")
+                    if attempt == max_retries - 1:
+                        _SS_BACKOFF_UNTIL = time.time() + 60
+                    else:
+                        time.sleep(2 ** attempt)
+                    continue
 
-    except httpx.TimeoutException:
-        print("[citation_resolver] Semantic Scholar timeout")
-    except httpx.HTTPError as e:
-        print(f"[citation_resolver] Semantic Scholar HTTP error: {e}")
-    except Exception as e:
-        print(f"[citation_resolver] Semantic Scholar error: {e}")
+                response.raise_for_status()
+                data = response.json()
+
+                if data.get("data"):
+                    # Return the best match
+                    return data["data"][0]
+                
+                break
+
+        except httpx.TimeoutException:
+            print("[citation_resolver] Semantic Scholar timeout")
+            time.sleep(2)
+        except httpx.HTTPError as e:
+            print(f"[citation_resolver] Semantic Scholar HTTP error: {e}")
+            break
+        except Exception as e:
+            print(f"[citation_resolver] Semantic Scholar error: {e}")
+            break
 
     return None
 
 
-def _search_arxiv(title: str) -> Optional[dict]:
+def _search_arxiv(title: str, max_retries: int = 2) -> Optional[dict]:
     """
     Search arXiv API for a paper by title.
     Returns paper metadata if found, None otherwise.
     """
-    try:
-        # arXiv uses ATOM XML format
-        params = {
-            "search_query": f"ti:{title}",
-            "start": 0,
-            "max_results": 3
-        }
+    global _ARXIV_BACKOFF_UNTIL
+    if time.time() < _ARXIV_BACKOFF_UNTIL:
+        return None
 
-        with httpx.Client(timeout=API_TIMEOUT, follow_redirects=True) as client:
-            response = client.get(ARXIV_API_URL, params=params)
-            response.raise_for_status()
+    # arXiv uses ATOM XML format
+    params = {
+        "search_query": f"ti:{title}",
+        "start": 0,
+        "max_results": 3
+    }
 
-            # Parse ATOM XML
-            result = _parse_arxiv_response(response.text)
-            if result:
-                return result
+    for attempt in range(max_retries):
+        try:
+            with httpx.Client(timeout=API_TIMEOUT, follow_redirects=True) as client:
+                response = client.get(ARXIV_API_URL, params=params)
 
-    except httpx.TimeoutException:
-        print("[citation_resolver] arXiv timeout")
-    except httpx.HTTPError as e:
-        print(f"[citation_resolver] arXiv HTTP error: {e}")
-    except Exception as e:
-        print(f"[citation_resolver] arXiv error: {e}")
+                if response.status_code in (429, 503):
+                    print(f"[citation_resolver] arXiv rate limit or temp error ({response.status_code}). Retrying in {2 ** attempt}s...")
+                    if attempt == max_retries - 1:
+                        _ARXIV_BACKOFF_UNTIL = time.time() + 60
+                    else:
+                        time.sleep(2 ** attempt)
+                    continue
+
+                response.raise_for_status()
+
+                # Parse ATOM XML
+                result = _parse_arxiv_response(response.text)
+                if result:
+                    return result
+                break
+
+        except httpx.TimeoutException:
+            print("[citation_resolver] arXiv timeout")
+            time.sleep(2)
+        except httpx.HTTPError as e:
+            print(f"[citation_resolver] arXiv HTTP error: {e}")
+            break
+        except Exception as e:
+            print(f"[citation_resolver] arXiv error: {e}")
+            break
 
     return None
 
