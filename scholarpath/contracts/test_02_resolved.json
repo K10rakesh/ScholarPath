@@ -1,0 +1,46 @@
+{
+  "doc_id": "test_001",
+  "resolved_citations": [
+    {
+      "ref_id": "[1]",
+      "resolution_status": "resolved",
+      "matched_title": "Cho and Pak reply to Lamm et al. comment on \"A Convergent Series for the QED Effective Action\"",
+      "authors": [
+        "Y. M. Cho"
+      ],
+      "year": 2003,
+      "abstract": "Cho and Pak reply to Lamm et al. [hep-th/0007108] comment on \"A Convergent Series for the Effective Action of QED\" [hep-th/0006057].",
+      "doi": null,
+      "paper_id": "arxiv_hep-th",
+      "source_provider": "arxiv",
+      "source_url": "https://arxiv.org/abs/hep-th",
+      "confidence": 0.5900000000000001,
+      "raw_text": "Bahdanau, Cho, and Bengio. Neural machine translation by jointly learning to align and translate. 2014."
+    },
+    {
+      "ref_id": "[2]",
+      "resolution_status": "resolved",
+      "matched_title": "Big Bang Nucleosynthesis Initial Conditions: Revisiting Wagoner et al. (1967)",
+      "authors": [
+        "Charlie Sharpe",
+        "Geraint F. Lewis",
+        "Luke A. Barnes"
+      ],
+      "year": 2021,
+      "abstract": "We revisit Wagoner et al. (1967), a classic contribution in the development of Big Bang Nucleosynthesis. We demonstrate that it presents an incorrect expression for the temperature of the early universe as a function of time in the high temperature limit, $T \\gtrsim 10^{10}$K. As this incorrect expression has been reproduced elsewhere, we present a corrected form for the initial conditions required for calculating the formation of the primordial elements in the Big Bang.",
+      "doi": null,
+      "paper_id": "arxiv_2104.10311v1",
+      "source_provider": "arxiv",
+      "source_url": "https://arxiv.org/abs/2104.10311v1",
+      "confidence": 0.6227272727272728,
+      "raw_text": "Gehring et al. Convolutional Sequence to Sequence Learning. 2017."
+    }
+  ],
+  "stats": {
+    "total_references": 2,
+    "resolved_count": 2,
+    "unresolved_count": 0
+  },
+  "processing_status": "success",
+  "errors": []
+}

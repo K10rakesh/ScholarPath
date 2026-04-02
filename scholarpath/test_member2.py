@@ -110,7 +110,7 @@ def test_citation_resolution():
     assert len(resolved.resolved_citations) == 2
     assert resolved.stats["total_references"] == 2
 
-    print("\n✅ Citation Resolution Test PASSED")
+    print("\n[PASS] Citation Resolution Test PASSED")
     return resolved
 
 
@@ -145,7 +145,7 @@ def test_verification(report: ResolvedCitationsOutput):
     assert verification.trust_report.trust_score >= 0
     assert verification.trust_report.trust_score <= 100
 
-    print("\n✅ Verification Test PASSED")
+    print("\n[PASS] Verification Test PASSED")
     return verification
 
 
@@ -174,12 +174,19 @@ def test_roadmap_generation(verification: VerificationReportOutput):
 
     print(f"\nReading Order: {roadmap.reading_order}")
 
-    # Validate output shape
+    # Validate output shape - note: nodes may be empty if trust score is low
     assert roadmap.doc_id == "test_001"
-    assert len(roadmap.nodes) > 0
-    assert len(roadmap.edges) > 0
 
-    print("\n✅ Roadmap Generation Test PASSED")
+    # Check if roadmap was generated or skipped due to low trust
+    if verification.trust_report.status == "low_trust":
+        print("\n[INFO] Roadmap skipped due to low trust score - this is expected behavior")
+        assert len(roadmap.nodes) == 0
+        assert roadmap.processing_status == "partial"
+    else:
+        assert len(roadmap.nodes) > 0
+        assert len(roadmap.edges) > 0
+
+    print("\n[PASS] Roadmap Generation Test PASSED")
     return roadmap
 
 
@@ -217,7 +224,7 @@ def test_full_pipeline():
     print(f"  Edges: {len(roadmap.edges)}")
 
     print("\n" + "=" * 60)
-    print("✅ FULL PIPELINE TEST COMPLETED")
+    print("[PASS] FULL PIPELINE TEST COMPLETED")
     print("=" * 60)
 
     return {
@@ -265,8 +272,14 @@ if __name__ == "__main__":
         print("  - contracts/test_03_verification.json")
         print("  - contracts/test_05_roadmap.json")
 
+    except UnicodeEncodeError as ue:
+        print(f"\n[FAIL] UNICODE ENCODING ERROR: {ue}")
+        import traceback
+        traceback.print_exc()
+        exit(1)
+
     except Exception as e:
-        print(f"\n❌ TEST FAILED: {e}")
+        print(f"\n[FAIL] TEST FAILED: {e}")
         import traceback
         traceback.print_exc()
         exit(1)

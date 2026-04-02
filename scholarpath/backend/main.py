@@ -40,6 +40,24 @@ load_dotenv()
 
 app = FastAPI(title="ScholarPath API", version="0.1.0")
 
+# Root endpoint - welcome message
+@app.get("/")
+async def root():
+    return {
+        "message": "Welcome to ScholarPath API",
+        "docs": "/docs",
+        "endpoints": [
+            "POST /upload-pdf",
+            "POST /analyze/{doc_id}",
+            "GET /status/{doc_id}",
+            "GET /results/{doc_id}",
+            "POST /resolve-citations/{doc_id}",
+            "POST /verify/{doc_id}",
+            "POST /generate-roadmap/{doc_id}",
+            "POST /full-pipeline/{doc_id}"
+        ]
+    }
+
 # Allow all origins for local dev — M3's React frontend needs this
 app.add_middleware(
     CORSMiddleware,

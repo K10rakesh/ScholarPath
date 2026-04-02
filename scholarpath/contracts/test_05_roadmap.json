@@ -1,0 +1,16 @@
+{
+  "doc_id": "test_001",
+  "target_topic": "Attention Is All You Need",
+  "roadmap_summary": "Roadmap generation skipped due to low trust score. The document's claims lack sufficient citation support.",
+  "nodes": [],
+  "edges": [],
+  "reading_order": [],
+  "resource_suggestions": [],
+  "processing_status": "partial",
+  "errors": [
+    {
+      "code": "LOW_TRUST",
+      "message": "Trust score 30 is below threshold. Roadmap generation requires trusted content."
+    }
+  ]
+}

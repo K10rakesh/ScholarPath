@@ -25,8 +25,8 @@ from backend.schemas_member2 import (
 SEMANTIC_SCHOLAR_SEARCH_URL = "https://api.semanticscholar.org/graph/v1/paper/search"
 SEMANTIC_SCHOLAR_RECOMMENDATIONS_URL = "https://api.semanticscholar.org/recommendations/v1/papers"
 
-# arXiv API endpoint
-ARXIV_API_URL = "http://export.arxiv.org/api/query"
+# arXiv API endpoint (use HTTPS to avoid redirect issues)
+ARXIV_API_URL = "https://export.arxiv.org/api/query"
 
 # Timeout for API requests
 API_TIMEOUT = 10.0  # seconds
@@ -217,7 +217,7 @@ def _search_semantic_scholar(title: str) -> Optional[dict]:
             "fields": "title,authors,publicationDate,abstract,externalIds,paperId"
         }
 
-        with httpx.Client(timeout=API_TIMEOUT) as client:
+        with httpx.Client(timeout=API_TIMEOUT, follow_redirects=True) as client:
             response = client.get(SEMANTIC_SCHOLAR_SEARCH_URL, params=params)
             response.raise_for_status()
             data = response.json()
@@ -249,7 +249,7 @@ def _search_arxiv(title: str) -> Optional[dict]:
             "max_results": 3
         }
 
-        with httpx.Client(timeout=API_TIMEOUT) as client:
+        with httpx.Client(timeout=API_TIMEOUT, follow_redirects=True) as client:
             response = client.get(ARXIV_API_URL, params=params)
             response.raise_for_status()
 
