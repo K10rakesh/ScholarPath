@@ -1,0 +1,98 @@
+{
+  "doc_id": "paper_001",
+  "target_topic": "Transformers and attention-based sequence modeling",
+  "roadmap_summary": "To understand the paper, the learner should first build foundations in linear algebra, probability, and neural networks before studying sequence models, attention, and finally transformers.",
+  "nodes": [
+    {
+      "node_id": "n1",
+      "label": "Vectors and Matrices",
+      "node_type": "prerequisite",
+      "level": 1,
+      "description": "Foundational linear algebra concepts needed to understand embeddings and tensor operations."
+    },
+    {
+      "node_id": "n2",
+      "label": "Probability Basics",
+      "node_type": "prerequisite",
+      "level": 1,
+      "description": "Useful for understanding softmax, likelihoods, and model outputs."
+    },
+    {
+      "node_id": "n3",
+      "label": "Neural Networks",
+      "node_type": "intermediate",
+      "level": 2,
+      "description": "Basic understanding of feedforward networks, backpropagation, and training."
+    },
+    {
+      "node_id": "n4",
+      "label": "Sequence Models",
+      "node_type": "intermediate",
+      "level": 3,
+      "description": "Understand sequence-to-sequence learning and recurrent modeling."
+    },
+    {
+      "node_id": "n5",
+      "label": "Attention Mechanism",
+      "node_type": "intermediate",
+      "level": 4,
+      "description": "Core concept required before studying transformers."
+    },
+    {
+      "node_id": "n6",
+      "label": "Transformers",
+      "node_type": "target",
+      "level": 5,
+      "description": "Final target concept needed to understand the uploaded paper."
+    }
+  ],
+  "edges": [
+    {
+      "from": "n1",
+      "to": "n3",
+      "relation": "required_for"
+    },
+    {
+      "from": "n2",
+      "to": "n3",
+      "relation": "required_for"
+    },
+    {
+      "from": "n3",
+      "to": "n4",
+      "relation": "required_for"
+    },
+    {
+      "from": "n4",
+      "to": "n5",
+      "relation": "required_for"
+    },
+    {
+      "from": "n5",
+      "to": "n6",
+      "relation": "required_for"
+    }
+  ],
+  "reading_order": [
+    "Vectors and Matrices",
+    "Probability Basics",
+    "Neural Networks",
+    "Sequence Models",
+    "Attention Mechanism",
+    "Transformers"
+  ],
+  "resource_suggestions": [
+    {
+      "topic": "Vectors and Matrices",
+      "resource_type": "search_hint",
+      "value": "Look for beginner resources on vectors, matrices, and matrix multiplication."
+    },
+    {
+      "topic": "Attention Mechanism",
+      "resource_type": "search_hint",
+      "value": "Study encoder-decoder attention and self-attention before reading transformer architecture."
+    }
+  ],
+  "processing_status": "success",
+  "errors": []
+}

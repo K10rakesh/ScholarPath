@@ -1,0 +1,423 @@
+# backend/agents/roadmap_generator.py
+# Member 2 - Roadmap Generation Agent
+# Generates personalized learning roadmaps from verified claims and concepts
+
+import json
+import re
+from typing import Optional
+
+import ollama
+
+from backend.schemas_member2 import (
+    RoadmapResponseOutput,
+    RoadmapNode,
+    RoadmapEdge,
+    ResourceSuggestion,
+    RoadmapNodeType,
+    ProcessingStatus,
+    VerificationReportOutput,
+    ParsedPaper,
+    ResolvedCitationsOutput,
+)
+
+
+# =============================================================================
+# Configuration
+# =============================================================================
+
+OLLAMA_MODEL = "phi3"
+
+# Common prerequisite mappings for ML/AI domain
+COMMON_PREREQUISITES = {
+    "transformers": ["linear algebra", "neural networks", "attention mechanism", "sequence models"],
+    "attention mechanism": ["neural networks", "sequence models", "softmax"],
+    "neural networks": ["linear algebra", "calculus", "probability"],
+    "sequence models": ["neural networks", "probability"],
+    "machine learning": ["linear algebra", "probability", "statistics"],
+    "deep learning": ["linear algebra", "calculus", "neural networks"],
+    "nlp": ["machine learning", "linguistics basics"],
+    "computer vision": ["linear algebra", "calculus", "image processing"],
+}
+
+
+# =============================================================================
+# Main entry point
+# =============================================================================
+
+def generate_roadmap(
+    parsed_paper: ParsedPaper,
+    verification_report: VerificationReportOutput
+) -> RoadmapResponseOutput:
+    """
+    Main entry point for roadmap generation.
+
+    Args:
+        parsed_paper: ParsedPaper from Member 1 (Contract 01)
+        verification_report: VerificationReportOutput (Contract 03)
+
+    Returns:
+        RoadmapResponseOutput (Contract 05)
+    """
+    doc_id = parsed_paper.doc_id
+    trust_report = verification_report.trust_report
+
+    # Check trust gate - don't generate if low trust
+    if trust_report.status == "low_trust":
+        return RoadmapResponseOutput(
+            doc_id=doc_id,
+            target_topic=parsed_paper.title,
+            roadmap_summary="Roadmap generation skipped due to low trust score. The document's claims lack sufficient citation support.",
+            nodes=[],
+            edges=[],
+            reading_order=[],
+            resource_suggestions=[],
+            processing_status=ProcessingStatus.PARTIAL,
+            errors=[{
+                "code": "LOW_TRUST",
+                "message": f"Trust score {trust_report.trust_score} is below threshold. Roadmap generation requires trusted content."
+            }]
+        )
+
+    # Extract target topic from paper
+    target_topic = _extract_target_topic(parsed_paper)
+
+    # Extract key concepts from verified claims
+    key_concepts = _extract_key_concepts(verification_report, parsed_paper)
+
+    # Generate the roadmap using LLM + heuristic scaffolding
+    roadmap = _generate_roadmap_with_llm(
+        target_topic=target_topic,
+        key_concepts=key_concepts,
+        domain=parsed_paper.domain or "machine_learning"
+    )
+
+    if roadmap is None:
+        # Fallback to heuristic-based roadmap
+        roadmap = _generate_heuristic_roadmap(target_topic, key_concepts)
+
+    return roadmap
+
+
+# =============================================================================
+# Private helpers
+# =============================================================================
+
+def _extract_target_topic(parsed_paper: ParsedPaper) -> str:
+    """
+    Extract the main topic/focus of the paper.
+    Uses title and abstract for context.
+    """
+    title = parsed_paper.title.lower()
+
+    # Common paper title patterns
+    patterns = [
+        r"(.+) for (.+)",
+        r"(.+) in (.+)",
+        r"towards (.+)",
+        r"learning (.+)",
+        r"understanding (.+)",
+    ]
+
+    for pattern in patterns:
+        match = re.search(pattern, title, re.IGNORECASE)
+        if match:
+            # Return the most specific part
+            groups = match.groups()
+            if len(groups) == 2:
+                return groups[1].strip() or groups[0].strip()
+            return groups[0].strip()
+
+    # Fallback: use key terms from title
+    stop_words = {"a", "an", "the", "for", "in", "on", "with", "using", "via", "towards"}
+    words = [w.strip(".,;:") for w in parsed_paper.title.split()]
+    key_words = [w for w in words if w.lower() not in stop_words and len(w) > 2]
+
+    return " ".join(key_words[:5]) if key_words else "Machine Learning"
+
+
+def _extract_key_concepts(
+    verification_report: VerificationReportOutput,
+    parsed_paper: ParsedPaper
+) -> list[str]:
+    """
+    Extract key concepts from verified claims and paper content.
+    """
+    concepts = set()
+
+    # Add concepts from verified claims
+    for result in verification_report.verification_results:
+        if result.verdict in ("supported", "partially_supported"):
+            # Extract nouns/noun phrases from claim text
+            claim_concepts = _extract_concepts_from_text(result.claim_text)
+            concepts.update(claim_concepts)
+
+    # Add domain-specific concepts
+    domain = (parsed_paper.domain or "machine_learning").lower()
+    if "ml" in domain or "machine learning" in domain:
+        concepts.add("machine learning")
+    if "nlp" in domain or "natural language" in domain:
+        concepts.add("natural language processing")
+    if "deep" in domain:
+        concepts.add("deep learning")
+
+    return list(concepts)[:10]  # Limit to top 10 concepts
+
+
+def _extract_concepts_from_text(text: str) -> list[str]:
+    """
+    Extract potential concepts from a text string.
+    Simple heuristic: capitalized terms and technical phrases.
+    """
+    concepts = []
+
+    # Look for capitalized technical terms
+    matches = re.findall(r'\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\b', text)
+    concepts.extend(matches)
+
+    # Look for common ML/AI terms (case insensitive)
+    ml_terms = [
+        "transformer", "attention", "neural network", "recurrent",
+        "convolutional", "encoder", "decoder", "embedding",
+        "sequence model", "language model"
+    ]
+    text_lower = text.lower()
+    for term in ml_terms:
+        if term in text_lower:
+            concepts.append(term.title())
+
+    return list(set(concepts))[:5]
+
+
+def _generate_roadmap_with_llm(
+    target_topic: str,
+    key_concepts: list[str],
+    domain: str
+) -> Optional[RoadmapResponseOutput]:
+    """
+    Generate roadmap using LLM for intelligent prerequisite ordering.
+    """
+    prompt = _build_roadmap_prompt(target_topic, key_concepts, domain)
+
+    try:
+        response = _call_llm(prompt)
+        parsed = _parse_roadmap_response(response, target_topic)
+
+        if parsed and parsed.nodes:
+            return parsed
+
+    except Exception as e:
+        print(f"[roadmap_generator] LLM generation failed: {e}")
+
+    return None
+
+
+def _build_roadmap_prompt(target_topic: str, key_concepts: list[str], domain: str) -> str:
+    """
+    Build the prompt for roadmap generation.
+    """
+    concepts_str = ", ".join(key_concepts) if key_concepts else "none identified"
+
+    return f"""You are an expert curriculum designer for {domain}. Your task is to create a learning roadmap for understanding a research paper.
+
+TARGET TOPIC: {target_topic}
+KEY CONCEPTS FROM PAPER: {concepts_str}
+
+Generate a personalized learning roadmap that:
+1. Starts with foundational prerequisites (linear algebra, probability, etc. if needed)
+2. Builds up through intermediate concepts
+3. Ends with the target topic
+
+The roadmap should have 5-8 nodes total, ordered from basic to advanced.
+
+Respond in this EXACT JSON format (no markdown):
+{{
+    "roadmap_summary": "One sentence explaining the learning path",
+    "nodes": [
+        {{
+            "node_id": "n1",
+            "label": "Concept Name",
+            "node_type": "prerequisite" | "intermediate" | "target",
+            "level": 1-5,
+            "description": "Why this is needed"
+        }}
+    ],
+    "edges": [
+        {{
+            "from": "n1",
+            "to": "n2",
+            "relation": "required_for"
+        }}
+    ],
+    "reading_order": ["Concept 1", "Concept 2", ...],
+    "resource_suggestions": [
+        {{
+            "topic": "Concept Name",
+            "resource_type": "search_hint",
+            "value": "What to search for"
+        }}
+    ]
+}}
+
+JSON:"""
+
+
+def _call_llm(prompt: str) -> str:
+    """Call local Ollama model."""
+    try:
+        response = ollama.chat(
+            model=OLLAMA_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            options={"temperature": 0.3}
+        )
+        return response["message"]["content"]
+    except Exception as e:
+        print(f"[roadmap_generator] Ollama call failed: {e}")
+        return ""
+
+
+def _parse_roadmap_response(
+    raw: str,
+    target_topic: str
+) -> Optional[RoadmapResponseOutput]:
+    """
+    Parse LLM response into RoadmapResponseOutput.
+    """
+    try:
+        clean = raw.strip()
+        clean = re.sub(r'^```json\s*', '', clean)
+        clean = re.sub(r'^```\s*', '', clean)
+        clean = re.sub(r'\s*```$', '', clean)
+        clean = clean.strip()
+
+        data = json.loads(clean)
+
+        # Parse nodes
+        nodes = []
+        for i, node_data in enumerate(data.get("nodes", [])):
+            node_type = node_data.get("node_type", "intermediate")
+            try:
+                node_type = RoadmapNodeType(node_type)
+            except ValueError:
+                node_type = RoadmapNodeType.INTERMEDIATE
+
+            nodes.append(RoadmapNode(
+                node_id=node_data.get("node_id", f"n{i + 1}"),
+                label=node_data.get("label", f"Concept {i + 1}"),
+                node_type=node_type,
+                level=node_data.get("level", 1),
+                description=node_data.get("description", "")
+            ))
+
+        # Parse edges
+        edges = []
+        for edge_data in data.get("edges", []):
+            edges.append(RoadmapEdge(
+                from_node=edge_data.get("from", ""),
+                to_node=edge_data.get("to", ""),
+                relation=edge_data.get("relation", "required_for")
+            ))
+
+        # Parse reading order
+        reading_order = data.get("reading_order", [n.label for n in nodes])
+
+        # Parse resource suggestions
+        resource_suggestions = []
+        for res_data in data.get("resource_suggestions", []):
+            resource_suggestions.append(ResourceSuggestion(
+                topic=res_data.get("topic", ""),
+                resource_type=res_data.get("resource_type", "search_hint"),
+                value=res_data.get("value", "")
+            ))
+
+        return RoadmapResponseOutput(
+            doc_id="",  # Will be set by caller
+            target_topic=target_topic,
+            roadmap_summary=data.get("roadmap_summary", ""),
+            nodes=nodes,
+            edges=edges,
+            reading_order=reading_order,
+            resource_suggestions=resource_suggestions
+        )
+
+    except json.JSONDecodeError as e:
+        print(f"[roadmap_generator] JSON decode error: {e}")
+        return None
+    except Exception as e:
+        print(f"[roadmap_generator] Parse error: {e}")
+        return None
+
+
+def _generate_heuristic_roadmap(
+    target_topic: str,
+    key_concepts: list[str]
+) -> RoadmapResponseOutput:
+    """
+    Fallback roadmap generation using heuristics when LLM fails.
+    Creates a standard ML learning path.
+    """
+    target_lower = target_topic.lower()
+
+    # Determine base prerequisites
+    prereqs = ["Vectors and Matrices", "Probability Basics"]
+
+    # Add domain-specific prereqs
+    if any(term in target_lower for term in ["transformer", "attention", "neural"]):
+        prereqs.extend(["Neural Networks", "Deep Learning Basics"])
+
+    if any(term in target_lower for term in ["sequence", "rnn", "lstm"]):
+        prereqs.append("Sequence Models")
+
+    if any(term in target_lower for term in ["attention", "transformer"]):
+        prereqs.append("Attention Mechanisms")
+
+    # Build nodes
+    nodes = []
+    for i, concept in enumerate(prereqs):
+        nodes.append(RoadmapNode(
+            node_id=f"n{i + 1}",
+            label=concept,
+            node_type=RoadmapNodeType.PREREQUISITE,
+            level=1 if i < 2 else 2,
+            description=f"Foundation needed for {target_topic}"
+        ))
+
+    # Add target
+    nodes.append(RoadmapNode(
+        node_id=f"n{len(nodes) + 1}",
+        label=target_topic.title(),
+        node_type=RoadmapNodeType.TARGET,
+        level=len(prereqs) + 1,
+        description="The main topic from the uploaded paper"
+    ))
+
+    # Build edges (linear chain)
+    edges = []
+    for i in range(len(nodes) - 1):
+        edges.append(RoadmapEdge(
+            from_node=nodes[i].node_id,
+            to_node=nodes[i + 1].node_id,
+            relation="required_for"
+        ))
+
+    # Reading order
+    reading_order = [n.label for n in nodes]
+
+    # Resource suggestions
+    resource_suggestions = [
+        ResourceSuggestion(
+            topic=concept,
+            resource_type="search_hint",
+            value=f"Search for beginner tutorials on {concept.lower()}"
+        )
+        for concept in prereqs[:3]
+    ]
+
+    return RoadmapResponseOutput(
+        doc_id="",
+        target_topic=target_topic,
+        roadmap_summary=f"To understand {target_topic}, start with mathematical foundations, then build up through core concepts.",
+        nodes=nodes,
+        edges=edges,
+        reading_order=reading_order,
+        resource_suggestions=resource_suggestions
+    )

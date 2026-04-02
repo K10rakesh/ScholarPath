@@ -1,0 +1,118 @@
+{
+  "doc_id": "paper_001",
+  "paper": {
+    "title": "Attention Is All You Need",
+    "authors": [
+      "Ashish Vaswani",
+      "Noam Shazeer",
+      "Niki Parmar"
+    ],
+    "domain": "machine_learning"
+  },
+  "trust_report": {
+    "trust_score": 81,
+    "status": "trusted",
+    "summary": "Most key claims are supported or partially supported by cited references.",
+    "supported_count": 1,
+    "partially_supported_count": 1,
+    "unsupported_count": 0,
+    "insufficient_evidence_count": 0,
+    "unresolved_count": 0
+  },
+  "claims_overview": [
+    {
+      "claim_id": "c1",
+      "claim_text": "The Transformer allows significantly more parallelization than recurrent sequence models.",
+      "citations": ["[2]"],
+      "verdict": "partially_supported",
+      "confidence": 0.74,
+      "explanation": "The cited paper discusses efficient sequence architectures, but does not directly prove the transformer-specific comparison."
+    },
+    {
+      "claim_id": "c2",
+      "claim_text": "Attention mechanisms have become an integral part of sequence modeling and transduction models.",
+      "citations": ["[1]"],
+      "verdict": "supported",
+      "confidence": 0.88,
+      "explanation": "The cited paper directly validates the use of attention in sequence modeling."
+    }
+  ],
+  "roadmap": {
+    "target_topic": "Transformers and attention-based sequence modeling",
+    "nodes": [
+      {
+        "node_id": "n1",
+        "label": "Vectors and Matrices",
+        "node_type": "prerequisite",
+        "level": 1
+      },
+      {
+        "node_id": "n2",
+        "label": "Probability Basics",
+        "node_type": "prerequisite",
+        "level": 1
+      },
+      {
+        "node_id": "n3",
+        "label": "Neural Networks",
+        "node_type": "intermediate",
+        "level": 2
+      },
+      {
+        "node_id": "n4",
+        "label": "Sequence Models",
+        "node_type": "intermediate",
+        "level": 3
+      },
+      {
+        "node_id": "n5",
+        "label": "Attention Mechanism",
+        "node_type": "intermediate",
+        "level": 4
+      },
+      {
+        "node_id": "n6",
+        "label": "Transformers",
+        "node_type": "target",
+        "level": 5
+      }
+    ],
+    "edges": [
+      {
+        "from": "n1",
+        "to": "n3",
+        "relation": "required_for"
+      },
+      {
+        "from": "n2",
+        "to": "n3",
+        "relation": "required_for"
+      },
+      {
+        "from": "n3",
+        "to": "n4",
+        "relation": "required_for"
+      },
+      {
+        "from": "n4",
+        "to": "n5",
+        "relation": "required_for"
+      },
+      {
+        "from": "n5",
+        "to": "n6",
+        "relation": "required_for"
+      }
+    ],
+    "reading_order": [
+      "Vectors and Matrices",
+      "Probability Basics",
+      "Neural Networks",
+      "Sequence Models",
+      "Attention Mechanism",
+      "Transformers"
+    ]
+  },
+  "processing_status": "success",
+  "errors": []
+}

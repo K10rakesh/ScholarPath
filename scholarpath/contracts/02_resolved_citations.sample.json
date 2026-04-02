@@ -1,0 +1,48 @@
+{
+  "doc_id": "paper_001",
+  "resolved_citations": [
+    {
+      "ref_id": "[1]",
+      "resolution_status": "resolved",
+      "matched_title": "Neural Machine Translation by Jointly Learning to Align and Translate",
+      "authors": [
+        "Dzmitry Bahdanau",
+        "Kyunghyun Cho",
+        "Yoshua Bengio"
+      ],
+      "year": 2014,
+      "abstract": "Neural machine translation is a recently proposed approach to machine translation that uses a sequence-to-sequence model with an encoder and decoder.",
+      "doi": null,
+      "paper_id": "arxiv_1409.0473",
+      "source_provider": "semantic_scholar",
+      "source_url": "https://www.semanticscholar.org/paper/abc123",
+      "confidence": 0.93,
+      "raw_text": "Bahdanau, Cho, and Bengio. Neural machine translation by jointly learning to align and translate. 2014."
+    },
+    {
+      "ref_id": "[2]",
+      "resolution_status": "resolved",
+      "matched_title": "Convolutional Sequence to Sequence Learning",
+      "authors": [
+        "Jonas Gehring",
+        "Michael Auli",
+        "David Grangier"
+      ],
+      "year": 2017,
+      "abstract": "A convolutional architecture for sequence to sequence learning that enables fully parallel computation over all elements in a sequence.",
+      "doi": null,
+      "paper_id": "arxiv_1705.03122",
+      "source_provider": "arxiv",
+      "source_url": "https://arxiv.org/abs/1705.03122",
+      "confidence": 0.89,
+      "raw_text": "Gehring et al. Convolutional Sequence to Sequence Learning. 2017."
+    }
+  ],
+  "stats": {
+    "total_references": 2,
+    "resolved_count": 2,
+    "unresolved_count": 0
+  },
+  "processing_status": "success",
+  "errors": []
+}
