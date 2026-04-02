@@ -1,0 +1,48 @@
+{
+  "doc_id": "test_001",
+  "verification_results": [
+    {
+      "verification_id": "v1",
+      "claim_id": "c1",
+      "claim_text": "The Transformer allows significantly more parallelization than recurrent sequence models.",
+      "ref_id": "[2]",
+      "citation_title": "Big Bang Nucleosynthesis Initial Conditions: Revisiting Wagoner et al. (1967)",
+      "resolution_status": "resolved",
+      "verdict": "insufficient_evidence",
+      "confidence": 0.3,
+      "explanation": "Could not determine support level from the available evidence.",
+      "evidence_span": null,
+      "used_text_source": "abstract"
+    },
+    {
+      "verification_id": "v2",
+      "claim_id": "c2",
+      "claim_text": "Attention mechanisms have become an integral part of sequence modeling and transduction models.",
+      "ref_id": "[1]",
+      "citation_title": "Cho and Pak reply to Lamm et al. comment on \"A Convergent Series for the QED Effective Action\"",
+      "resolution_status": "resolved",
+      "verdict": "insufficient_evidence",
+      "confidence": 0.3,
+      "explanation": "Could not determine support level from the available evidence.",
+      "evidence_span": null,
+      "used_text_source": "abstract"
+    }
+  ],
+  "trust_report": {
+    "trust_score": 30,
+    "status": "low_trust",
+    "summary": "Many claims lack proper citation support. This document may contain misrepresented evidence.",
+    "supported_count": 0,
+    "partially_supported_count": 0,
+    "unsupported_count": 0,
+    "insufficient_evidence_count": 2,
+    "unresolved_count": 0
+  },
+  "stats": {
+    "total_claims_checked": 2,
+    "claims_with_resolved_citations": 2,
+    "claims_with_unresolved_citations": 0
+  },
+  "processing_status": "success",
+  "errors": []
+}

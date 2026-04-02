@@ -1,0 +1,37 @@
+{
+  "doc_id": "paper_001",
+  "title": "Attention Is All You Need",
+  "domain": "machine_learning",
+  "trust_report": {
+    "trust_score": 81,
+    "status": "trusted",
+    "summary": "Most key claims are supported or partially supported."
+  },
+  "verified_claims": [
+    {
+      "claim_id": "c2",
+      "claim_text": "Attention mechanisms have become an integral part of sequence modeling and transduction models.",
+      "verdict": "supported",
+      "confidence": 0.88
+    },
+    {
+      "claim_id": "c1",
+      "claim_text": "The Transformer allows significantly more parallelization than recurrent sequence models.",
+      "verdict": "partially_supported",
+      "confidence": 0.74
+    }
+  ],
+  "target_topic": "Transformers and attention-based sequence modeling",
+  "key_concepts": [
+    "vectors and matrices",
+    "probability",
+    "neural networks",
+    "sequence models",
+    "attention mechanism",
+    "transformers"
+  ],
+  "constraints": {
+    "only_generate_if_trusted": true,
+    "max_nodes": 8
+  }
+}

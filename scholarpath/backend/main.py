@@ -8,12 +8,25 @@ from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
-from backend.schemas import (
-    ParsedPaper, RoadmapRequest, RoadmapResponse, 
-    FinalReport, PaperBrief, RoadmapBrief, ClaimOverview
+from backend.schemas import ParsedPaper
+from backend.schemas_member2 import (
+    ResolvedCitationsOutput,
+    VerificationReportOutput,
+    RoadmapResponseOutput,
+    FinalReportOutput,
+    PaperSummary,
+    ClaimsOverviewItem,
+    RoadmapSummary,
+    TrustReport,
+    VerifiedClaimSummary,
+    TrustReportSummary,
+    RoadmapConstraints,
+    RoadmapRequest,
 )
-from backend.agents.roadmap_generator import generate_roadmap
 from backend.agents.pdf_parser import parse_pdf
+from backend.agents.citation_resolver import resolve_citations
+from backend.agents.verification_agent import verify_claims
+from backend.agents.roadmap_generator import generate_roadmap
 from backend.database import (
     insert_document,
     update_document_status,
@@ -26,6 +39,24 @@ from backend.database import (
 load_dotenv()
 
 app = FastAPI(title="ScholarPath API", version="0.1.0")
+
+# Root endpoint - welcome message
+@app.get("/")
+async def root():
+    return {
+        "message": "Welcome to ScholarPath API",
+        "docs": "/docs",
+        "endpoints": [
+            "POST /upload-pdf",
+            "POST /analyze/{doc_id}",
+            "GET /status/{doc_id}",
+            "GET /results/{doc_id}",
+            "POST /resolve-citations/{doc_id}",
+            "POST /verify/{doc_id}",
+            "POST /generate-roadmap/{doc_id}",
+            "POST /full-pipeline/{doc_id}"
+        ]
+    }
 
 # Allow all origins for local dev — M3's React frontend needs this
 app.add_middleware(
@@ -165,70 +196,268 @@ async def demo_papers():
     ]
 
 
-# ── POST /generate-roadmap ─────────────────────────────────────────────────────
+# =============================================================================
+# Member 2 API Endpoints - Citation Resolution, Verification, Roadmap
+# =============================================================================
 
-@app.post("/generate-roadmap", response_model=RoadmapResponse)
-async def generate_roadmap_endpoint(request: RoadmapRequest):
+# In-memory cache for Member 2 outputs (for MVP - use DB in production)
+_member2_cache = {}
+
+
+@app.post("/resolve-citations/{doc_id}")
+async def resolve_citations_endpoint(doc_id: str):
     """
-    Member 3 Endpoint:
-    Takes a RoadmapRequest (Target topic, verified claims) and uses the AI
-    to build a prerequisite/intermediate/target curriculum graph.
+    Member 2 - Contract 02: Resolve citations to real paper metadata.
+    Takes the parsed paper from Member 1 and fetches metadata from Semantic Scholar/arXiv.
     """
-    response = generate_roadmap(request)
-    if response.processing_status == "failed":
-        raise HTTPException(status_code=500, detail=response.errors)
-    return response
+    # Get the parsed paper first
+    paper = get_parsed_paper(doc_id)
+    if paper is None:
+        raise HTTPException(status_code=404, detail="Parsed paper not found. Run /analyze first.")
+
+    # Run citation resolution
+    resolved: ResolvedCitationsOutput = resolve_citations(paper)
+
+    # Cache the result
+    _member2_cache[f"{doc_id}_citations"] = resolved.model_dump()
+
+    return resolved.model_dump()
 
 
-# ── POST /final-report ─────────────────────────────────────────────────────────
-
-@app.post("/final-report", response_model=FinalReport)
-async def final_report(doc_id: str, request: RoadmapRequest):
+@app.get("/citations/{doc_id}")
+async def get_citations(doc_id: str):
     """
-    Member 3 Endpoint (Frontend Assembly):
-    Combines the paper details, trust report, and the generated roadmap into a 
-    single unified JSON payload for the UI.
+    Get resolved citations for a document.
     """
-    # Fetch paper from the DB
-    paper_data_raw = get_parsed_paper(doc_id)
-    if not paper_data_raw:
-        raise HTTPException(status_code=404, detail="Paper not found in database.")
-    
-    # Generate the roadmap graph
-    roadmap = generate_roadmap(request)
-    if roadmap.processing_status == "failed":
-        raise HTTPException(status_code=500, detail=roadmap.errors)
+    cached = _member2_cache.get(f"{doc_id}_citations")
+    if cached:
+        return cached
+    raise HTTPException(status_code=404, detail="Citations not resolved yet. Call /resolve-citations first.")
 
-    # Reconstruct paper subset
-    paper_brief = PaperBrief(
-        title=paper_data_raw.title,
-        authors=paper_data_raw.authors,
-        domain=paper_data_raw.domain
-    )
-    
-    roadmap_brief = RoadmapBrief(
-        target_topic=roadmap.target_topic,
-        nodes=roadmap.nodes,
-        edges=roadmap.edges,
-        reading_order=roadmap.reading_order
-    )
 
-    claims_view = [
-        ClaimOverview(
-            claim_id=c.claim_id, 
-            claim_text=c.claim_text, 
-            citations=[], 
-            verdict=c.verdict, 
-            confidence=c.confidence, 
-            explanation="Processed by M2 Verification Pipeline"
-        ) for c in request.verified_claims
-    ]
+@app.post("/verify/{doc_id}")
+async def verify_endpoint(doc_id: str):
+    """
+    Member 2 - Contract 03: Verify claims against cited evidence.
+    Takes parsed paper + resolved citations, produces verification report with trust score.
+    """
+    # Get the parsed paper
+    paper = get_parsed_paper(doc_id)
+    if paper is None:
+        raise HTTPException(status_code=404, detail="Parsed paper not found.")
 
-    # Combine everything for the UI
-    return FinalReport(
+    # Get resolved citations
+    citations_data = _member2_cache.get(f"{doc_id}_citations")
+    if not citations_data:
+        # Auto-resolve if not already done
+        from backend.agents.citation_resolver import resolve_citations
+        resolved: ResolvedCitationsOutput = resolve_citations(paper)
+        _member2_cache[f"{doc_id}_citations"] = resolved.model_dump()
+    else:
+        resolved = ResolvedCitationsOutput(**citations_data)
+
+    # Run verification
+    verification: VerificationReportOutput = verify_claims(paper, resolved)
+
+    # Cache the result
+    _member2_cache[f"{doc_id}_verification"] = verification.model_dump()
+
+    return verification.model_dump()
+
+
+@app.get("/verification/{doc_id}")
+async def get_verification(doc_id: str):
+    """
+    Get verification report for a document.
+    """
+    cached = _member2_cache.get(f"{doc_id}_verification")
+    if cached:
+        return cached
+    raise HTTPException(status_code=404, detail="Verification not done yet. Call /verify first.")
+
+
+@app.post("/generate-roadmap/{doc_id}")
+async def generate_roadmap_endpoint(doc_id: str):
+    """
+    Member 2 - Contract 05: Generate personalized learning roadmap.
+    Takes parsed paper + verification report, produces roadmap (only if trust gate passes).
+    """
+    # Get the parsed paper
+    paper = get_parsed_paper(doc_id)
+    if paper is None:
+        raise HTTPException(status_code=404, detail="Parsed paper not found.")
+
+    # Get verification report
+    verification_data = _member2_cache.get(f"{doc_id}_verification")
+    if not verification_data:
+        raise HTTPException(
+            status_code=400,
+            detail="Verification not done yet. Call /verify first."
+        )
+
+    verification = VerificationReportOutput(**verification_data)
+
+    # Check trust gate
+    if verification.trust_report.status == TrustStatus.LOW_TRUST:
+        # Still generate response but with empty roadmap
+        roadmap = RoadmapResponseOutput(
+            doc_id=doc_id,
+            target_topic=paper.title,
+            roadmap_summary="Roadmap generation skipped due to low trust score.",
+            nodes=[],
+            edges=[],
+            reading_order=[],
+            resource_suggestions=[],
+            processing_status="partial",
+            errors=[{
+                "code": "LOW_TRUST",
+                "message": f"Trust score {verification.trust_report.trust_score} is below threshold."
+            }]
+        )
+    else:
+        # Generate roadmap
+        roadmap: RoadmapResponseOutput = generate_roadmap(paper, verification)
+        roadmap.doc_id = doc_id
+
+    # Cache the result
+    _member2_cache[f"{doc_id}_roadmap"] = roadmap.model_dump()
+
+    return roadmap.model_dump()
+
+
+@app.get("/roadmap/{doc_id}")
+async def get_roadmap(doc_id: str):
+    """
+    Get roadmap for a document.
+    """
+    cached = _member2_cache.get(f"{doc_id}_roadmap")
+    if cached:
+        return cached
+    raise HTTPException(status_code=404, detail="Roadmap not generated yet. Call /generate-roadmap first.")
+
+
+@app.post("/full-pipeline/{doc_id}")
+async def full_pipeline_endpoint(doc_id: str):
+    """
+    Run the complete Member 2 pipeline: resolve citations -> verify claims -> generate roadmap.
+    Returns the combined Final Report (Contract 06).
+    """
+    # Step 1: Get parsed paper
+    paper = get_parsed_paper(doc_id)
+    if paper is None:
+        raise HTTPException(status_code=404, detail="Parsed paper not found.")
+
+    # Step 2: Resolve citations
+    resolved: ResolvedCitationsOutput = resolve_citations(paper)
+    _member2_cache[f"{doc_id}_citations"] = resolved.model_dump()
+
+    # Step 3: Verify claims
+    verification: VerificationReportOutput = verify_claims(paper, resolved)
+    _member2_cache[f"{doc_id}_verification"] = verification.model_dump()
+
+    # Step 4: Generate roadmap (or skip if low trust)
+    if verification.trust_report.status == TrustStatus.LOW_TRUST:
+        roadmap = RoadmapResponseOutput(
+            doc_id=doc_id,
+            target_topic=paper.title,
+            roadmap_summary="Roadmap generation skipped due to low trust score.",
+            nodes=[],
+            edges=[],
+            reading_order=[],
+            resource_suggestions=[],
+            processing_status="partial"
+        )
+    else:
+        roadmap: RoadmapResponseOutput = generate_roadmap(paper, verification)
+        roadmap.doc_id = doc_id
+
+    _member2_cache[f"{doc_id}_roadmap"] = roadmap.model_dump()
+
+    # Step 5: Assemble final report (Contract 06)
+    final_report = FinalReportOutput(
         doc_id=doc_id,
-        paper=paper_brief,
-        trust_report=request.trust_report,
-        claims_overview=claims_view,
-        roadmap=roadmap_brief
-    )
+        paper=PaperSummary(
+            title=paper.title,
+            authors=paper.authors,
+            domain=paper.domain or "unknown"
+        ),
+        trust_report=verification.trust_report,
+        claims_overview=[
+            ClaimsOverviewItem(
+                claim_id=r.claim_id,
+                claim_text=r.claim_text,
+                citations=[r.ref_id],
+                verdict=r.verdict,
+                confidence=r.confidence,
+                explanation=r.explanation
+            )
+            for r in verification.verification_results
+        ],
+        roadmap=RoadmapSummary(
+            target_topic=roadmap.target_topic,
+            nodes=roadmap.nodes,
+            edges=roadmap.edges,
+            reading_order=roadmap.reading_order
+        ),
+        processing_status=verification.processing_status,
+        errors=verification.errors + roadmap.errors
+    )
+
+    _member2_cache[f"{doc_id}_final"] = final_report.model_dump()
+
+    return final_report.model_dump()
+
+
+@app.get("/final-report/{doc_id}")
+async def get_final_report(doc_id: str):
+    """
+    Get the combined final report (Contract 06) for frontend consumption.
+    """
+    cached = _member2_cache.get(f"{doc_id}_final")
+    if cached:
+        return cached
+
+    # Try to assemble from cached parts
+    verification_data = _member2_cache.get(f"{doc_id}_verification")
+    roadmap_data = _member2_cache.get(f"{doc_id}_roadmap")
+    paper = get_parsed_paper(doc_id)
+
+    if not all([verification_data, roadmap_data, paper]):
+        raise HTTPException(
+            status_code=404,
+            detail="Run /full-pipeline first or ensure all steps are complete."
+        )
+
+    verification = VerificationReportOutput(**verification_data)
+    roadmap = RoadmapResponseOutput(**roadmap_data)
+
+    final_report = FinalReportOutput(
+        doc_id=doc_id,
+        paper=PaperSummary(
+            title=paper.title,
+            authors=paper.authors,
+            domain=paper.domain or "unknown"
+        ),
+        trust_report=verification.trust_report,
+        claims_overview=[
+            ClaimsOverviewItem(
+                claim_id=r.claim_id,
+                claim_text=r.claim_text,
+                citations=[r.ref_id],
+                verdict=r.verdict,
+                confidence=r.confidence,
+                explanation=r.explanation
+            )
+            for r in verification.verification_results
+        ],
+        roadmap=RoadmapSummary(
+            target_topic=roadmap.target_topic,
+            nodes=roadmap.nodes,
+            edges=roadmap.edges,
+            reading_order=roadmap.reading_order
+        ),
+        processing_status=verification.processing_status,
+        errors=verification.errors + roadmap.errors
+    )
+
+    return final_report.model_dump()

@@ -1,0 +1,52 @@
+# Environment
+backend/.env
+venv/
+.venv/
+
+# Python cache - all directories
+__pycache__/
+**/__pycache__/
+**/**/__pycache__/
+*.py[cod]
+**/*.py[cod]
+*$py.class
+**/*$py.class
+
+# IDE cache
+.idea/
+.vscode/
+*.swp
+*.swo
+**/*.swp
+**/*.swo
+
+# Pytest
+.pytest_cache/
+**/.pytest_cache/
+
+# Database
+*.db
+**/*.db
+scholarpath.db
+
+# Uploads
+uploads/
+**/uploads/
+
+# Test artifacts
+contracts/test_*.json
+
+# Distribution
+build/
+dist/
+*.egg-info/
+
+# OS
+.DS_Store
+**/.DS_Store
+Thumbs.db
+**/Thumbs.db
+
+# Secrets
+*.key
+*.pem

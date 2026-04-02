@@ -33,7 +33,7 @@ test_sections = [
 
 claims = extract_claims(test_sentences, test_sections)
 
-print(f"\n✅ Extracted {len(claims)} claims:\n")
+print(f"\n[PASS] Extracted {len(claims)} claims:\n")
 for c in claims:
     print(f"  [{c.claim_id}] {c.claim_text[:60]}...")
     print(f"         citations={c.citations}, type={c.claim_type}, priority={c.priority}\n")

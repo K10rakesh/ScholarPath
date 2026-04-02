@@ -50,37 +50,198 @@ def generate_roadmap(request: RoadmapRequest) -> RoadmapResponse:
             edges=[],
             reading_order=[],
             resource_suggestions=[],
-            processing_status="failed",
-            errors=[{"code": "LLM_PARSE_ERROR", "message": "Could not parse LLM output as JSON"}]
+            processing_status=ProcessingStatus.PARTIAL,
+            errors=[{
+                "code": "LOW_TRUST",
+                "message": f"Trust score {trust_report.trust_score} is below threshold. Roadmap generation requires trusted content."
+            }]
         )
 
-    # Attach the doc_id and target_topic from the request to the valid response
-    roadmap_data["doc_id"] = request.doc_id
-    roadmap_data["target_topic"] = request.target_topic
-    
-    # Use Pydantic to validate the dict maps perfectly to the Class
+    # Extract target topic from paper
+    target_topic = _extract_target_topic(parsed_paper)
+
+    # Extract key concepts from verified claims
+    key_concepts = _extract_key_concepts(verification_report, parsed_paper)
+
+    # Generate the roadmap using LLM + heuristic scaffolding
+    roadmap = _generate_roadmap_with_llm(
+        target_topic=target_topic,
+        key_concepts=key_concepts,
+        domain=parsed_paper.domain or "machine_learning"
+    )
+
+    if roadmap is None:
+        # Fallback to heuristic-based roadmap
+        roadmap = _generate_heuristic_roadmap(target_topic, key_concepts)
+
+    return roadmap
+
+
+# =============================================================================
+# Private helpers
+# =============================================================================
+
+def _extract_target_topic(parsed_paper: ParsedPaper) -> str:
+    """
+    Extract the main topic/focus of the paper.
+    Uses title and abstract for context.
+    """
+    title = parsed_paper.title.lower()
+
+    # Common paper title patterns
+    patterns = [
+        r"(.+) for (.+)",
+        r"(.+) in (.+)",
+        r"towards (.+)",
+        r"learning (.+)",
+        r"understanding (.+)",
+    ]
+
+    for pattern in patterns:
+        match = re.search(pattern, title, re.IGNORECASE)
+        if match:
+            # Return the most specific part
+            groups = match.groups()
+            if len(groups) == 2:
+                return groups[1].strip() or groups[0].strip()
+            return groups[0].strip()
+
+    # Fallback: use key terms from title
+    stop_words = {"a", "an", "the", "for", "in", "on", "with", "using", "via", "towards"}
+    words = [w.strip(".,;:") for w in parsed_paper.title.split()]
+    key_words = [w for w in words if w.lower() not in stop_words and len(w) > 2]
+
+    return " ".join(key_words[:5]) if key_words else "Machine Learning"
+
+
+def _extract_key_concepts(
+    verification_report: VerificationReportOutput,
+    parsed_paper: ParsedPaper
+) -> list[str]:
+    """
+    Extract key concepts from verified claims and paper content.
+    """
+    concepts = set()
+
+    # Add concepts from verified claims
+    for result in verification_report.verification_results:
+        if result.verdict in ("supported", "partially_supported"):
+            # Extract nouns/noun phrases from claim text
+            claim_concepts = _extract_concepts_from_text(result.claim_text)
+            concepts.update(claim_concepts)
+
+    # Add domain-specific concepts
+    domain = (parsed_paper.domain or "machine_learning").lower()
+    if "ml" in domain or "machine learning" in domain:
+        concepts.add("machine learning")
+    if "nlp" in domain or "natural language" in domain:
+        concepts.add("natural language processing")
+    if "deep" in domain:
+        concepts.add("deep learning")
+
+    return list(concepts)[:10]  # Limit to top 10 concepts
+
+
+def _extract_concepts_from_text(text: str) -> list[str]:
+    """
+    Extract potential concepts from a text string.
+    Simple heuristic: capitalized terms and technical phrases.
+    """
+    concepts = []
+
+    # Look for capitalized technical terms
+    matches = re.findall(r'\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\b', text)
+    concepts.extend(matches)
+
+    # Look for common ML/AI terms (case insensitive)
+    ml_terms = [
+        "transformer", "attention", "neural network", "recurrent",
+        "convolutional", "encoder", "decoder", "embedding",
+        "sequence model", "language model"
+    ]
+    text_lower = text.lower()
+    for term in ml_terms:
+        if term in text_lower:
+            concepts.append(term.title())
+
+    return list(set(concepts))[:5]
+
+
+def _generate_roadmap_with_llm(
+    target_topic: str,
+    key_concepts: list[str],
+    domain: str
+) -> Optional[RoadmapResponseOutput]:
+    """
+    Generate roadmap using LLM for intelligent prerequisite ordering.
+    """
+    prompt = _build_roadmap_prompt(target_topic, key_concepts, domain)
+
     try:
-        response_model = RoadmapResponse(**roadmap_data)
-        return response_model
+        response = _call_llm(prompt)
+        parsed = _parse_roadmap_response(response, target_topic)
+
+        if parsed and parsed.nodes:
+            return parsed
+
     except Exception as e:
-        print(f"[roadmap_generator] Pydantic validation error: {e}")
-        return RoadmapResponse(
-            doc_id=request.doc_id,
-            target_topic=request.target_topic,
-            roadmap_summary="Internal validation error.",
-            nodes=[],
-            edges=[],
-            reading_order=[],
-            resource_suggestions=[],
-            processing_status="failed",
-            errors=[{"code": "SCHEMA_VALIDATION_ERROR", "message": str(e)}]
-        )
+        print(f"[roadmap_generator] LLM generation failed: {e}")
+
+    return None
+
+
+def _build_roadmap_prompt(target_topic: str, key_concepts: list[str], domain: str) -> str:
+    """
+    Build the prompt for roadmap generation.
+    """
+    concepts_str = ", ".join(key_concepts) if key_concepts else "none identified"
+
+    return f"""You are an expert curriculum designer for {domain}. Your task is to create a learning roadmap for understanding a research paper.
+
+TARGET TOPIC: {target_topic}
+KEY CONCEPTS FROM PAPER: {concepts_str}
+
+Generate a personalized learning roadmap that:
+1. Starts with foundational prerequisites (linear algebra, probability, etc. if needed)
+2. Builds up through intermediate concepts
+3. Ends with the target topic
+
+The roadmap should have 5-8 nodes total, ordered from basic to advanced.
+
+Respond in this EXACT JSON format (no markdown):
+{{
+    "roadmap_summary": "One sentence explaining the learning path",
+    "nodes": [
+        {{
+            "node_id": "n1",
+            "label": "Concept Name",
+            "node_type": "prerequisite" | "intermediate" | "target",
+            "level": 1-5,
+            "description": "Why this is needed"
+        }}
+    ],
+    "edges": [
+        {{
+            "from": "n1",
+            "to": "n2",
+            "relation": "required_for"
+        }}
+    ],
+    "reading_order": ["Concept 1", "Concept 2", ...],
+    "resource_suggestions": [
+        {{
+            "topic": "Concept Name",
+            "resource_type": "search_hint",
+            "value": "What to search for"
+        }}
+    ]
+}}
+
+JSON:"""
 
 
 def _call_llm(prompt: str) -> str:
-    """
-    Calls local Ollama model.
-    """
+    """Call local Ollama model."""
     try:
         response = ollama.chat(
             model=OLLAMA_MODEL,
@@ -90,11 +251,15 @@ def _call_llm(prompt: str) -> str:
         return response["message"]["content"]
     except Exception as e:
         print(f"[roadmap_generator] Ollama call failed: {e}")
-        return "{}"
+        return ""
 
-def _parse_response(raw: str) -> dict | None:
+
+def _parse_roadmap_response(
+    raw: str,
+    target_topic: str
+) -> Optional[RoadmapResponseOutput]:
     """
-    Strips markdown and parses JSON.
+    Parse LLM response into RoadmapResponseOutput.
     """
     try:
         clean = raw.strip()
