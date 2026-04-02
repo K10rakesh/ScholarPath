@@ -2,7 +2,7 @@
 # These Pydantic models define the exact shape of our output contract.
 # Member 2 codes against these shapes — do not rename any keys.
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, model_validator, Field
 from typing import Optional
 
 
@@ -69,3 +69,133 @@ class ParsedPaper(BaseModel):
                         f"but no such ref_id exists in references[]"
                     )
         return violations
+
+
+# --- Member 2 Schemas ---
+
+class ResolvedCitation(BaseModel):
+    ref_id: str
+    resolution_status: str # "resolved" | "partially_resolved" | "unresolved"
+    matched_title: Optional[str] = None
+    authors: list[str] = []
+    year: Optional[int] = None
+    abstract: Optional[str] = None
+    doi: Optional[str] = None
+    paper_id: Optional[str] = None
+    source_provider: Optional[str] = None
+    source_url: Optional[str] = None
+    confidence: Optional[float] = None
+    raw_text: str
+
+class ResolvedCitationsReport(BaseModel):
+    doc_id: str
+    resolved_citations: list[ResolvedCitation]
+    stats: dict
+    processing_status: str = "success"
+    errors: list[dict] = []
+
+class VerificationResult(BaseModel):
+    verification_id: str
+    claim_id: str
+    claim_text: str
+    ref_id: str
+    citation_title: Optional[str] = None
+    resolution_status: str
+    verdict: str  # "supported" | "partially_supported" | "unsupported" | "insufficient_evidence" | "unresolved"
+    confidence: float
+    explanation: str
+    evidence_span: Optional[str] = None
+    used_text_source: Optional[str] = None
+
+class TrustReport(BaseModel):
+    trust_score: int
+    status: str  # "trusted" | "caution" | "low_trust"
+    summary: str
+    supported_count: Optional[int] = 0
+    partially_supported_count: Optional[int] = 0
+    unsupported_count: Optional[int] = 0
+    insufficient_evidence_count: Optional[int] = 0
+    unresolved_count: Optional[int] = 0
+
+class VerificationReport(BaseModel):
+    doc_id: str
+    verification_results: list[VerificationResult]
+    trust_report: TrustReport
+    stats: dict
+    processing_status: str = "success"
+    errors: list[dict] = []
+
+
+# --- Member 3 Schemas ---
+
+class VerifiedClaimSimple(BaseModel):
+    claim_id: str
+    claim_text: str
+    verdict: str
+    confidence: float
+
+class RoadmapRequest(BaseModel):
+    doc_id: str
+    title: str
+    domain: Optional[str] = None
+    trust_report: TrustReport
+    verified_claims: list[VerifiedClaimSimple]
+    target_topic: str
+    key_concepts: list[str]
+    constraints: dict = {"only_generate_if_trusted": True, "max_nodes": 8}
+
+class RoadmapNode(BaseModel):
+    node_id: str
+    label: str
+    node_type: str # "prerequisite" | "intermediate" | "target"
+    level: int
+    description: Optional[str] = None
+
+class RoadmapEdge(BaseModel):
+    from_node: str = Field(alias="from")
+    to: str
+    relation: str = "required_for"
+    
+class ResourceSuggestion(BaseModel):
+    topic: str
+    resource_type: str # "search_hint"
+    value: str
+
+class RoadmapResponse(BaseModel):
+    doc_id: str
+    target_topic: str
+    roadmap_summary: str
+    nodes: list[RoadmapNode]
+    edges: list[RoadmapEdge]
+    reading_order: list[str]
+    resource_suggestions: list[ResourceSuggestion]
+    processing_status: str = "success"
+    errors: list[dict] = []
+
+class ClaimOverview(BaseModel):
+    claim_id: str
+    claim_text: str
+    citations: list[str]
+    verdict: str
+    confidence: float
+    explanation: str
+
+class PaperBrief(BaseModel):
+    title: str
+    authors: list[str]
+    domain: Optional[str] = None
+
+class RoadmapBrief(BaseModel):
+    target_topic: str
+    nodes: list[RoadmapNode]
+    edges: list[RoadmapEdge]
+    reading_order: list[str]
+
+class FinalReport(BaseModel):
+    doc_id: str
+    paper: PaperBrief
+    trust_report: TrustReport
+    claims_overview: list[ClaimOverview]
+    roadmap: RoadmapBrief
+    processing_status: str = "success"
+    errors: list[dict] = []

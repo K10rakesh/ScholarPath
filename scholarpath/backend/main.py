@@ -8,7 +8,11 @@ from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
-from backend.schemas import ParsedPaper
+from backend.schemas import (
+    ParsedPaper, RoadmapRequest, RoadmapResponse, 
+    FinalReport, PaperBrief, RoadmapBrief, ClaimOverview
+)
+from backend.agents.roadmap_generator import generate_roadmap
 from backend.agents.pdf_parser import parse_pdf
 from backend.database import (
     insert_document,
@@ -159,3 +163,72 @@ async def demo_papers():
             "doc_id": "demo002"
         }
     ]
+
+
+# ── POST /generate-roadmap ─────────────────────────────────────────────────────
+
+@app.post("/generate-roadmap", response_model=RoadmapResponse)
+async def generate_roadmap_endpoint(request: RoadmapRequest):
+    """
+    Member 3 Endpoint:
+    Takes a RoadmapRequest (Target topic, verified claims) and uses the AI
+    to build a prerequisite/intermediate/target curriculum graph.
+    """
+    response = generate_roadmap(request)
+    if response.processing_status == "failed":
+        raise HTTPException(status_code=500, detail=response.errors)
+    return response
+
+
+# ── POST /final-report ─────────────────────────────────────────────────────────
+
+@app.post("/final-report", response_model=FinalReport)
+async def final_report(doc_id: str, request: RoadmapRequest):
+    """
+    Member 3 Endpoint (Frontend Assembly):
+    Combines the paper details, trust report, and the generated roadmap into a 
+    single unified JSON payload for the UI.
+    """
+    # Fetch paper from the DB
+    paper_data_raw = get_parsed_paper(doc_id)
+    if not paper_data_raw:
+        raise HTTPException(status_code=404, detail="Paper not found in database.")
+    
+    # Generate the roadmap graph
+    roadmap = generate_roadmap(request)
+    if roadmap.processing_status == "failed":
+        raise HTTPException(status_code=500, detail=roadmap.errors)
+
+    # Reconstruct paper subset
+    paper_brief = PaperBrief(
+        title=paper_data_raw.title,
+        authors=paper_data_raw.authors,
+        domain=paper_data_raw.domain
+    )
+    
+    roadmap_brief = RoadmapBrief(
+        target_topic=roadmap.target_topic,
+        nodes=roadmap.nodes,
+        edges=roadmap.edges,
+        reading_order=roadmap.reading_order
+    )
+
+    claims_view = [
+        ClaimOverview(
+            claim_id=c.claim_id, 
+            claim_text=c.claim_text, 
+            citations=[], 
+            verdict=c.verdict, 
+            confidence=c.confidence, 
+            explanation="Processed by M2 Verification Pipeline"
+        ) for c in request.verified_claims
+    ]
+
+    # Combine everything for the UI
+    return FinalReport(
+        doc_id=doc_id,
+        paper=paper_brief,
+        trust_report=request.trust_report,
+        claims_overview=claims_view,
+        roadmap=roadmap_brief
+    )
