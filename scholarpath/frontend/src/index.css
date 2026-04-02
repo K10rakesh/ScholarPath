@@ -1,0 +1,149 @@
+/* frontend/src/index.css */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap');
+
+/* Universal box-sizing reset */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+:root {
+  --bg-light: #FADEF9;
+  --bg-grad: #E36BFD;
+  --text-main: #390A01;
+  --btn-primary: #0305A2;
+  --btn-hover: #020478;
+  --text-muted: rgba(57, 10, 1, 0.65);
+  --card-bg: rgba(255, 255, 255, 0.45);
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family: 'Inter', sans-serif;
+  background: linear-gradient(135deg, var(--bg-light) 0%, var(--bg-grad) 100%);
+  color: var(--text-main);
+  height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ClickSpark wrapper fills full screen */
+#root,
+#root > div {
+  width: 100vw;
+  height: 100vh;
+  position: relative;
+}
+
+.container {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+/* ─── Glass Card ──────────────────────── */
+.glass-card {
+  width: 100%;
+  padding: 3rem 3rem 3.5rem;
+  text-align: center;
+  border: none;
+  background: var(--card-bg);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-radius: 16px;
+}
+
+/* ─── Typography ──────────────────────── */
+.title {
+  font-size: 2.5rem;
+  font-weight: 800;
+  margin: 0 0 0.5rem;
+  color: #E8174A;
+  letter-spacing: -1px;
+}
+
+.subtitle {
+  color: var(--text-muted);
+  font-size: 1rem;
+  font-weight: 400;
+  margin-top: 0;
+  margin-bottom: 2.5rem;
+}
+
+/* ─── Upload Area ─────────────────────── */
+.upload-area {
+  margin-bottom: 1.5rem;
+}
+
+.upload-area input {
+  display: none;
+}
+
+.upload-label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 120px;
+  border: 2px dashed #E8174A;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: background 0.25s ease, transform 0.2s ease;
+  background: rgba(255, 255, 255, 0.3);
+  color: var(--text-muted);
+  font-weight: 500;
+  font-size: 0.95rem;
+}
+
+.upload-label:hover {
+  background: rgba(255, 255, 255, 0.6);
+  transform: translateY(-2px);
+  color: var(--text-main);
+  border-style: solid;
+}
+
+.file-name {
+  color: var(--btn-primary);
+  font-weight: 700;
+}
+
+/* ─── Button ──────────────────────────── */
+.generate-btn {
+  width: 100%;
+  padding: 0.9rem 1rem;
+  border: none;
+  border-radius: 10px;
+  background: #E8174A;
+  color: white;
+  font-size: 1.05rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  letter-spacing: 0.02em;
+  transition: background 0.25s ease, transform 0.2s ease, box-shadow 0.2s ease;
+  box-shadow: 0 4px 14px rgba(232, 23, 74, 0.35);
+}
+
+.generate-btn:hover:not(.disabled) {
+  background: #c4103d;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(232, 23, 74, 0.5);
+}
+
+.generate-btn.disabled {
+  background: rgba(232, 23, 74, 0.25);
+  color: rgba(255, 255, 255, 0.55);
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
+}
+
+.generate-btn.loading {
+  background: #c4103d;
+  cursor: wait;
+}
+
+/* Background shapes hidden */
+.background-shapes {
+  display: none;
+}

@@ -1,72 +1,51 @@
 # backend/agents/roadmap_generator.py
-# Member 2 - Roadmap Generation Agent
-# Generates personalized learning roadmaps from verified claims and concepts
 
 import json
 import re
-from typing import Optional
-
 import ollama
 
-from backend.schemas_member2 import (
-    RoadmapResponseOutput,
-    RoadmapNode,
-    RoadmapEdge,
-    ResourceSuggestion,
-    RoadmapNodeType,
-    ProcessingStatus,
-    VerificationReportOutput,
-    ParsedPaper,
-    ResolvedCitationsOutput,
-)
+from backend.schemas import RoadmapRequest, RoadmapResponse
+from backend.prompts.roadmap_generation import ROADMAP_GENERATION_PROMPT
 
-
-# =============================================================================
-# Configuration
-# =============================================================================
-
+# You can adjust this to match the team's preference
 OLLAMA_MODEL = "phi3"
 
-# Common prerequisite mappings for ML/AI domain
-COMMON_PREREQUISITES = {
-    "transformers": ["linear algebra", "neural networks", "attention mechanism", "sequence models"],
-    "attention mechanism": ["neural networks", "sequence models", "softmax"],
-    "neural networks": ["linear algebra", "calculus", "probability"],
-    "sequence models": ["neural networks", "probability"],
-    "machine learning": ["linear algebra", "probability", "statistics"],
-    "deep learning": ["linear algebra", "calculus", "neural networks"],
-    "nlp": ["machine learning", "linguistics basics"],
-    "computer vision": ["linear algebra", "calculus", "image processing"],
-}
-
-
-# =============================================================================
-# Main entry point
-# =============================================================================
-
-def generate_roadmap(
-    parsed_paper: ParsedPaper,
-    verification_report: VerificationReportOutput
-) -> RoadmapResponseOutput:
+def generate_roadmap(request: RoadmapRequest) -> RoadmapResponse:
     """
-    Main entry point for roadmap generation.
-
-    Args:
-        parsed_paper: ParsedPaper from Member 1 (Contract 01)
-        verification_report: VerificationReportOutput (Contract 03)
-
-    Returns:
-        RoadmapResponseOutput (Contract 05)
+    Main entry point for Member 3.
+    Takes a RoadmapRequest contract and calls the LLM to generate the curriculum.
+    Returns the strict RoadmapResponse contract.
     """
-    doc_id = parsed_paper.doc_id
-    trust_report = verification_report.trust_report
+    claims_text = "\n".join([f"- {c.claim_text} ({c.verdict})" for c in request.verified_claims])
+    concepts_text = ", ".join(request.key_concepts)
+    
+    prompt = ROADMAP_GENERATION_PROMPT.format(
+        target_topic=request.target_topic,
+        domain=request.domain or "General research",
+        key_concepts=concepts_text,
+        verified_claims=claims_text,
+        max_nodes=request.constraints.get("max_nodes", 8)
+    )
 
-    # Check trust gate - don't generate if low trust
-    if trust_report.status == "low_trust":
-        return RoadmapResponseOutput(
-            doc_id=doc_id,
-            target_topic=parsed_paper.title,
-            roadmap_summary="Roadmap generation skipped due to low trust score. The document's claims lack sufficient citation support.",
+    # Call the LLM
+    raw_response = _call_llm(prompt)
+    
+    # Parse and validate with Pydantic
+    roadmap_data = _parse_response(raw_response)
+
+    if roadmap_data is None:
+        # Retry once on bad JSON
+        print("[roadmap_generator] Parse failed, retrying...")
+        retry_prompt = prompt + "\n\nIMPORTANT: Return ONLY valid JSON. No markdown blocks."
+        raw_response = _call_llm(retry_prompt)
+        roadmap_data = _parse_response(raw_response)
+
+    if roadmap_data is None:
+        print("[roadmap_generator] Both attempts failed. Returning error state.")
+        return RoadmapResponse(
+            doc_id=request.doc_id,
+            target_topic=request.target_topic,
+            roadmap_summary="Failed to generate roadmap due to AI output error.",
             nodes=[],
             edges=[],
             reading_order=[],
@@ -267,7 +246,7 @@ def _call_llm(prompt: str) -> str:
         response = ollama.chat(
             model=OLLAMA_MODEL,
             messages=[{"role": "user", "content": prompt}],
-            options={"temperature": 0.3}
+            options={"temperature": 0.2}
         )
         return response["message"]["content"]
     except Exception as e:
@@ -290,134 +269,9 @@ def _parse_roadmap_response(
         clean = clean.strip()
 
         data = json.loads(clean)
-
-        # Parse nodes
-        nodes = []
-        for i, node_data in enumerate(data.get("nodes", [])):
-            node_type = node_data.get("node_type", "intermediate")
-            try:
-                node_type = RoadmapNodeType(node_type)
-            except ValueError:
-                node_type = RoadmapNodeType.INTERMEDIATE
-
-            nodes.append(RoadmapNode(
-                node_id=node_data.get("node_id", f"n{i + 1}"),
-                label=node_data.get("label", f"Concept {i + 1}"),
-                node_type=node_type,
-                level=node_data.get("level", 1),
-                description=node_data.get("description", "")
-            ))
-
-        # Parse edges
-        edges = []
-        for edge_data in data.get("edges", []):
-            edges.append(RoadmapEdge(
-                from_node=edge_data.get("from", ""),
-                to_node=edge_data.get("to", ""),
-                relation=edge_data.get("relation", "required_for")
-            ))
-
-        # Parse reading order
-        reading_order = data.get("reading_order", [n.label for n in nodes])
-
-        # Parse resource suggestions
-        resource_suggestions = []
-        for res_data in data.get("resource_suggestions", []):
-            resource_suggestions.append(ResourceSuggestion(
-                topic=res_data.get("topic", ""),
-                resource_type=res_data.get("resource_type", "search_hint"),
-                value=res_data.get("value", "")
-            ))
-
-        return RoadmapResponseOutput(
-            doc_id="",  # Will be set by caller
-            target_topic=target_topic,
-            roadmap_summary=data.get("roadmap_summary", ""),
-            nodes=nodes,
-            edges=edges,
-            reading_order=reading_order,
-            resource_suggestions=resource_suggestions
-        )
-
+        if not isinstance(data, dict):
+            return None
+        return data
     except json.JSONDecodeError as e:
         print(f"[roadmap_generator] JSON decode error: {e}")
         return None
-    except Exception as e:
-        print(f"[roadmap_generator] Parse error: {e}")
-        return None
-
-
-def _generate_heuristic_roadmap(
-    target_topic: str,
-    key_concepts: list[str]
-) -> RoadmapResponseOutput:
-    """
-    Fallback roadmap generation using heuristics when LLM fails.
-    Creates a standard ML learning path.
-    """
-    target_lower = target_topic.lower()
-
-    # Determine base prerequisites
-    prereqs = ["Vectors and Matrices", "Probability Basics"]
-
-    # Add domain-specific prereqs
-    if any(term in target_lower for term in ["transformer", "attention", "neural"]):
-        prereqs.extend(["Neural Networks", "Deep Learning Basics"])
-
-    if any(term in target_lower for term in ["sequence", "rnn", "lstm"]):
-        prereqs.append("Sequence Models")
-
-    if any(term in target_lower for term in ["attention", "transformer"]):
-        prereqs.append("Attention Mechanisms")
-
-    # Build nodes
-    nodes = []
-    for i, concept in enumerate(prereqs):
-        nodes.append(RoadmapNode(
-            node_id=f"n{i + 1}",
-            label=concept,
-            node_type=RoadmapNodeType.PREREQUISITE,
-            level=1 if i < 2 else 2,
-            description=f"Foundation needed for {target_topic}"
-        ))
-
-    # Add target
-    nodes.append(RoadmapNode(
-        node_id=f"n{len(nodes) + 1}",
-        label=target_topic.title(),
-        node_type=RoadmapNodeType.TARGET,
-        level=len(prereqs) + 1,
-        description="The main topic from the uploaded paper"
-    ))
-
-    # Build edges (linear chain)
-    edges = []
-    for i in range(len(nodes) - 1):
-        edges.append(RoadmapEdge(
-            from_node=nodes[i].node_id,
-            to_node=nodes[i + 1].node_id,
-            relation="required_for"
-        ))
-
-    # Reading order
-    reading_order = [n.label for n in nodes]
-
-    # Resource suggestions
-    resource_suggestions = [
-        ResourceSuggestion(
-            topic=concept,
-            resource_type="search_hint",
-            value=f"Search for beginner tutorials on {concept.lower()}"
-        )
-        for concept in prereqs[:3]
-    ]
-
-    return RoadmapResponseOutput(
-        doc_id="",
-        target_topic=target_topic,
-        roadmap_summary=f"To understand {target_topic}, start with mathematical foundations, then build up through core concepts.",
-        nodes=nodes,
-        edges=edges,
-        reading_order=reading_order,
-        resource_suggestions=resource_suggestions
-    )
