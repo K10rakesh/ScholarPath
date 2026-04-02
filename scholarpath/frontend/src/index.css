@@ -143,6 +143,25 @@ body {
   cursor: wait;
 }
 
+/* Error message styling */
+.error-message {
+  color: #ef4444;
+  margin-top: 1rem;
+  font-size: 0.9rem;
+}
+
+/* Results view enhancements */
+.glass-card h3 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin: 0 0 0.5rem;
+}
+
+.glass-card p {
+  margin: 0;
+  line-height: 1.5;
+}
+
 /* Background shapes hidden */
 .background-shapes {
   display: none;

@@ -2,50 +2,35 @@
 
 import json
 import re
+from typing import Optional
+
 import ollama
 
-from backend.schemas import RoadmapRequest, RoadmapResponse
-from backend.prompts.roadmap_generation import ROADMAP_GENERATION_PROMPT
-
+from backend.schemas_member2 import (
+    ParsedPaper,
+    VerificationReportOutput,
+    RoadmapResponseOutput,
+    RoadmapNode,
+    RoadmapEdge,
+    ResourceSuggestion,
+    ProcessingStatus,
+    TrustStatus,
+)
 # You can adjust this to match the team's preference
 OLLAMA_MODEL = "phi3"
 
-def generate_roadmap(request: RoadmapRequest) -> RoadmapResponse:
+
+def generate_roadmap(parsed_paper: ParsedPaper, verification_report: VerificationReportOutput) -> RoadmapResponseOutput:
     """
-    Main entry point for Member 3.
-    Takes a RoadmapRequest contract and calls the LLM to generate the curriculum.
-    Returns the strict RoadmapResponse contract.
+    Main entry point for roadmap generation.
+    Takes parsed paper and verification report, produces roadmap response.
     """
-    claims_text = "\n".join([f"- {c.claim_text} ({c.verdict})" for c in request.verified_claims])
-    concepts_text = ", ".join(request.key_concepts)
-    
-    prompt = ROADMAP_GENERATION_PROMPT.format(
-        target_topic=request.target_topic,
-        domain=request.domain or "General research",
-        key_concepts=concepts_text,
-        verified_claims=claims_text,
-        max_nodes=request.constraints.get("max_nodes", 8)
-    )
-
-    # Call the LLM
-    raw_response = _call_llm(prompt)
-    
-    # Parse and validate with Pydantic
-    roadmap_data = _parse_response(raw_response)
-
-    if roadmap_data is None:
-        # Retry once on bad JSON
-        print("[roadmap_generator] Parse failed, retrying...")
-        retry_prompt = prompt + "\n\nIMPORTANT: Return ONLY valid JSON. No markdown blocks."
-        raw_response = _call_llm(retry_prompt)
-        roadmap_data = _parse_response(raw_response)
-
-    if roadmap_data is None:
-        print("[roadmap_generator] Both attempts failed. Returning error state.")
-        return RoadmapResponse(
-            doc_id=request.doc_id,
-            target_topic=request.target_topic,
-            roadmap_summary="Failed to generate roadmap due to AI output error.",
+    # Check trust gate
+    if verification_report.trust_report.status == TrustStatus.LOW_TRUST:
+        return RoadmapResponseOutput(
+            doc_id=parsed_paper.doc_id,
+            target_topic=parsed_paper.title,
+            roadmap_summary="Roadmap generation skipped due to low trust score.",
             nodes=[],
             edges=[],
             reading_order=[],
@@ -53,7 +38,7 @@ def generate_roadmap(request: RoadmapRequest) -> RoadmapResponse:
             processing_status=ProcessingStatus.PARTIAL,
             errors=[{
                 "code": "LOW_TRUST",
-                "message": f"Trust score {trust_report.trust_score} is below threshold. Roadmap generation requires trusted content."
+                "message": f"Trust score {verification_report.trust_report.trust_score} is below threshold."
             }]
         )
 
@@ -63,16 +48,21 @@ def generate_roadmap(request: RoadmapRequest) -> RoadmapResponse:
     # Extract key concepts from verified claims
     key_concepts = _extract_key_concepts(verification_report, parsed_paper)
 
-    # Generate the roadmap using LLM + heuristic scaffolding
+    # Generate the roadmap using LLM
     roadmap = _generate_roadmap_with_llm(
         target_topic=target_topic,
         key_concepts=key_concepts,
-        domain=parsed_paper.domain or "machine_learning"
+        domain=parsed_paper.domain or "machine_learning",
+        doc_id=parsed_paper.doc_id
     )
 
     if roadmap is None:
-        # Fallback to heuristic-based roadmap
-        roadmap = _generate_heuristic_roadmap(target_topic, key_concepts)
+        # Fallback to heuristic roadmap
+        roadmap = _generate_heuristic_roadmap(
+            target_topic=target_topic,
+            key_concepts=key_concepts,
+            doc_id=parsed_paper.doc_id
+        )
 
     return roadmap
 
@@ -170,7 +160,8 @@ def _extract_concepts_from_text(text: str) -> list[str]:
 def _generate_roadmap_with_llm(
     target_topic: str,
     key_concepts: list[str],
-    domain: str
+    domain: str,
+    doc_id: str
 ) -> Optional[RoadmapResponseOutput]:
     """
     Generate roadmap using LLM for intelligent prerequisite ordering.
@@ -179,7 +170,7 @@ def _generate_roadmap_with_llm(
 
     try:
         response = _call_llm(prompt)
-        parsed = _parse_roadmap_response(response, target_topic)
+        parsed = _parse_roadmap_response(response, target_topic, doc_id)
 
         if parsed and parsed.nodes:
             return parsed
@@ -256,7 +247,8 @@ def _call_llm(prompt: str) -> str:
 
 def _parse_roadmap_response(
     raw: str,
-    target_topic: str
+    target_topic: str,
+    doc_id: str
 ) -> Optional[RoadmapResponseOutput]:
     """
     Parse LLM response into RoadmapResponseOutput.
@@ -271,7 +263,123 @@ def _parse_roadmap_response(
         data = json.loads(clean)
         if not isinstance(data, dict):
             return None
-        return data
+
+        # Convert to RoadmapResponseOutput
+        nodes = []
+        for node in data.get("nodes", []):
+            nodes.append(RoadmapNode(
+                node_id=node.get("node_id"),
+                label=node.get("label"),
+                node_type=node.get("node_type", "prerequisite"),
+                level=node.get("level", 1),
+                description=node.get("description", "")
+            ))
+
+        edges = []
+        for edge in data.get("edges", []):
+            edges.append(RoadmapEdge(
+                from_node=edge.get("from"),
+                to_node=edge.get("to"),
+                relation=edge.get("relation", "required_for")
+            ))
+
+        reading_order = data.get("reading_order", [])
+        resource_suggestions = []
+        for res in data.get("resource_suggestions", []):
+            resource_suggestions.append(ResourceSuggestion(
+                topic=res.get("topic"),
+                resource_type=res.get("resource_type", "search_hint"),
+                value=res.get("value")
+            ))
+
+        return RoadmapResponseOutput(
+            doc_id=doc_id,
+            target_topic=target_topic,
+            roadmap_summary=data.get("roadmap_summary", "Learning roadmap"),
+            nodes=nodes,
+            edges=edges,
+            reading_order=reading_order,
+            resource_suggestions=resource_suggestions,
+            processing_status=ProcessingStatus.SUCCESS
+        )
     except json.JSONDecodeError as e:
         print(f"[roadmap_generator] JSON decode error: {e}")
         return None
+
+
+def _generate_heuristic_roadmap(
+    target_topic: str,
+    key_concepts: list[str],
+    doc_id: str
+) -> RoadmapResponseOutput:
+    """
+    Fallback heuristic-based roadmap generation.
+    """
+    nodes = []
+    reading_order = []
+
+    # Add foundational concepts
+    nodes.append(RoadmapNode(
+        node_id="n1",
+        label="Mathematical Foundations",
+        node_type="prerequisite",
+        level=1,
+        description="Linear algebra, calculus, and probability basics"
+    ))
+    reading_order.append("Mathematical Foundations")
+
+    nodes.append(RoadmapNode(
+        node_id="n2",
+        label="Core Domain Concepts",
+        node_type="prerequisite",
+        level=2,
+        description="Fundamental concepts in the field"
+    ))
+    reading_order.append("Core Domain Concepts")
+
+    # Add key concepts from paper
+    for i, concept in enumerate(key_concepts[:3], start=3):
+        nodes.append(RoadmapNode(
+            node_id=f"n{i}",
+            label=concept,
+            node_type="intermediate",
+            level=i,
+            description=f"Understanding {concept}"
+        ))
+        reading_order.append(concept)
+
+    # Add target topic
+    nodes.append(RoadmapNode(
+        node_id=f"n{len(nodes) + 1}",
+        label=target_topic,
+        node_type="target",
+        level=len(nodes) + 1,
+        description="The main topic of the paper"
+    ))
+    reading_order.append(target_topic)
+
+    # Create edges
+    edges = []
+    for i in range(len(nodes) - 1):
+        edges.append(RoadmapEdge(
+            from_node=nodes[i].node_id,
+            to_node=nodes[i + 1].node_id,
+            relation="required_for"
+        ))
+
+    return RoadmapResponseOutput(
+        doc_id=doc_id,
+        target_topic=target_topic,
+        roadmap_summary=f"Learn {target_topic} through {len(nodes)} structured topics",
+        nodes=nodes,
+        edges=edges,
+        reading_order=reading_order,
+        resource_suggestions=[
+            ResourceSuggestion(
+                topic=target_topic,
+                resource_type="search_hint",
+                value=f"{target_topic} tutorial for beginners"
+            )
+        ],
+        processing_status=ProcessingStatus.SUCCESS
+    )
