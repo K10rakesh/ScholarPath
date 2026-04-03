@@ -18,6 +18,7 @@ def extract_claims(
     Main entry point.
     Takes citation sentences from pdf_parser + section list.
     Returns a flat list of Claim objects.
+    Uses LLM first, falls back to heuristics if LLM fails.
     """
     if not citation_sentences:
         return []
@@ -33,11 +34,21 @@ def extract_claims(
 
     all_claims = []
     global_counter = 1  # claim IDs are globally unique: c1, c2, c3...
+    llm_success = False
 
     for batch in batches:
         claims, count = _process_batch(batch, section_lookup, global_counter)
+        if count > 0:
+            llm_success = True
         all_claims.extend(claims)
         global_counter += count
+
+    # If LLM failed completely, fall back to heuristic extraction
+    if not llm_success or not all_claims:
+        print("[claim_extractor] LLM extraction returned no claims, using heuristic fallback")
+        heuristic_claims = _extract_claims_heuristic(citation_sentences, sections)
+        if heuristic_claims:
+            return heuristic_claims
 
     # Deduplicate by claim_text — safety net for overlapping batches
     seen = set()
@@ -124,6 +135,68 @@ def _call_llm(prompt: str) -> str:
         print(f"[claim_extractor] Ollama call failed: {e}")
         print("  → Is Ollama running? Start it with: ollama serve")
         return "[]"
+
+
+def _extract_claims_heuristic(
+    citation_sentences: list[dict],
+    sections: list[Section]
+) -> list[Claim]:
+    """
+    Fallback heuristic claim extraction when LLM is unavailable.
+    Extracts sentences that contain citation markers like [1], [2].
+    """
+    section_lookup = _build_section_lookup(citation_sentences, sections)
+    claims = []
+
+    for i, sent in enumerate(citation_sentences):
+        sentence = sent.get("sentence", "")
+        sentence_idx = sent.get("sentence_index", i)
+
+        # Check if sentence has citation markers like [1], [2], [1,2], etc.
+        citation_markers = re.findall(r'\[\d+(?:,\s*\d+)*\]', sentence)
+
+        if not citation_markers:
+            continue
+
+        # Skip speculative/future work sentences
+        lower = sentence.lower()
+        if any(kw in lower for kw in [
+            "future work", "should", "might", "could", "we believe",
+            "it seems", "limitation", "one direction"
+        ]):
+            continue
+
+        # Determine section info
+        sec_info = section_lookup.get(sentence_idx, {})
+        section_heading = sec_info.get("heading", "Unknown")
+        section_id = sec_info.get("section_id", "s0")
+
+        # Determine claim type based on keywords
+        if "result" in lower or "achieve" in lower or "outperform" in lower:
+            claim_type = "result"
+            priority = "high"
+        elif "method" in lower or "approach" in lower or "propose" in lower:
+            claim_type = "method"
+            priority = "high"
+        elif "compare" in lower or "better" in lower or "than" in lower:
+            claim_type = "comparative"
+            priority = "high"
+        else:
+            claim_type = "background"
+            priority = "medium"
+
+        claims.append(Claim(
+            claim_id=f"c{i + 1}",
+            claim_text=sentence,
+            citations=citation_markers,
+            section=section_heading,
+            section_id=section_id,
+            priority=priority,
+            claim_type=claim_type,
+            sentence_index=sentence_idx
+        ))
+
+    return claims
     
 def _parse_response(
     raw: str,

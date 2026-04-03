@@ -24,45 +24,45 @@ def generate_roadmap(parsed_paper: ParsedPaper, verification_report: Verificatio
     """
     Main entry point for roadmap generation.
     Takes parsed paper and verification report, produces roadmap response.
+    Always generates a roadmap - uses heuristics when LLM is unavailable.
     """
-    # Check trust gate
-    if verification_report.trust_report.status == TrustStatus.LOW_TRUST:
-        return RoadmapResponseOutput(
-            doc_id=parsed_paper.doc_id,
-            target_topic=parsed_paper.title,
-            roadmap_summary="Roadmap generation skipped due to low trust score.",
-            nodes=[],
-            edges=[],
-            reading_order=[],
-            resource_suggestions=[],
-            processing_status=ProcessingStatus.PARTIAL,
-            errors=[{
-                "code": "LOW_TRUST",
-                "message": f"Trust score {verification_report.trust_report.trust_score} is below threshold."
-            }]
-        )
-
     # Extract target topic from paper
     target_topic = _extract_target_topic(parsed_paper)
 
-    # Extract key concepts from verified claims
+    # Extract key concepts from verified claims (or paper content if no verified claims)
     key_concepts = _extract_key_concepts(verification_report, parsed_paper)
 
-    # Generate the roadmap using LLM
-    roadmap = _generate_roadmap_with_llm(
-        target_topic=target_topic,
-        key_concepts=key_concepts,
-        domain=parsed_paper.domain or "machine_learning",
-        doc_id=parsed_paper.doc_id
-    )
+    # Check trust gate - still generate roadmap but mark as cautionary
+    skip_llm = False
+    if verification_report.trust_report.status == TrustStatus.LOW_TRUST:
+        # Don't skip - generate with heuristic and add warning
+        skip_llm = True
 
+    # Generate the roadmap using LLM (if trust is sufficient)
+    roadmap = None
+    if not skip_llm:
+        roadmap = _generate_roadmap_with_llm(
+            target_topic=target_topic,
+            key_concepts=key_concepts,
+            domain=parsed_paper.domain or "machine_learning",
+            doc_id=parsed_paper.doc_id
+        )
+
+    # Fallback to heuristic roadmap (always works, no LLM needed)
     if roadmap is None:
-        # Fallback to heuristic roadmap
         roadmap = _generate_heuristic_roadmap(
             target_topic=target_topic,
             key_concepts=key_concepts,
             doc_id=parsed_paper.doc_id
         )
+
+    # Add trust warning if applicable
+    if verification_report.trust_report.status == TrustStatus.LOW_TRUST:
+        roadmap.processing_status = ProcessingStatus.PARTIAL
+        roadmap.errors.append({
+            "code": "LOW_TRUST",
+            "message": f"Trust score {verification_report.trust_report.trust_score} is below threshold. Verify claims independently."
+        })
 
     return roadmap
 
@@ -110,15 +110,34 @@ def _extract_key_concepts(
 ) -> list[str]:
     """
     Extract key concepts from verified claims and paper content.
+    Falls back to paper content if no verified claims exist.
     """
     concepts = set()
 
     # Add concepts from verified claims
+    verified_claims_exist = False
     for result in verification_report.verification_results:
         if result.verdict in ("supported", "partially_supported"):
+            verified_claims_exist = True
             # Extract nouns/noun phrases from claim text
             claim_concepts = _extract_concepts_from_text(result.claim_text)
             concepts.update(claim_concepts)
+
+    # If no verified claims, extract concepts directly from paper content
+    if not verified_claims_exist:
+        # Extract from abstract
+        if parsed_paper.abstract:
+            abstract_concepts = _extract_concepts_from_text(parsed_paper.abstract)
+            concepts.update(abstract_concepts)
+
+        # Extract from section headings
+        for section in parsed_paper.sections:
+            heading_concepts = _extract_concepts_from_text(section.heading)
+            concepts.update(heading_concepts)
+
+        # Extract from title
+        title_concepts = _extract_concepts_from_text(parsed_paper.title)
+        concepts.update(title_concepts)
 
     # Add domain-specific concepts
     domain = (parsed_paper.domain or "machine_learning").lower()

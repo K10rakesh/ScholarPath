@@ -26,7 +26,13 @@ def parse_pdf(file_path: str, doc_id: str) -> ParsedPaper:
         full_text = ""
 
         for page in doc:
-            full_text += page.get_text()
+            # Use 'text' dict for better Unicode handling
+            try:
+                full_text += page.get_text("text", sort=True)
+            except Exception as page_err:
+                # Some pages might have encoding issues - skip them
+                print(f"[pdf_parser] Warning: Could not extract text from page: {page_err}")
+                continue
 
         if not full_text.strip():
             # PDF opened but no text extracted — likely a scanned image PDF
@@ -254,9 +260,11 @@ def extract_abstract(full_text: str) -> str | None:
 # ─── Helper: build a failed ParsedPaper for error cases ──────────────────────
 
 def _error_paper(doc_id: str, file_path: str, code: str, message: str) -> ParsedPaper:
+    # Sanitize message to avoid encoding issues
+    safe_message = message.encode('ascii', 'replace').decode('ascii')[:200]
     return ParsedPaper(
         doc_id=doc_id,
-        file_name=file_path.split("/")[-1],
+        file_name=file_path.split("\\")[-1].split("/")[-1],  # Handle both Windows and Unix paths
         title="Unknown",
         authors=[],
         full_text="",
@@ -265,5 +273,5 @@ def _error_paper(doc_id: str, file_path: str, code: str, message: str) -> Parsed
         claims=[],
         stats={},
         processing_status="failed",
-        errors=[{"code": code, "message": message}]
+        errors=[{"code": code, "message": safe_message}]
     )

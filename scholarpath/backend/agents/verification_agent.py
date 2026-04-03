@@ -161,11 +161,18 @@ def _verify_claim_with_llm(
 ) -> VerificationResult:
     """
     Use LLM to verify if a claim is supported by the cited evidence.
+    Falls back to heuristic verification if LLM is unavailable.
     """
     prompt = _build_verification_prompt(claim.claim_text, evidence_text)
 
     try:
         response = _call_llm(prompt)
+
+        # Check if LLM returned empty (model unavailable)
+        if not response or not response.strip():
+            print(f"[verification_agent] LLM returned empty response, using heuristic fallback")
+            return _verify_claim_heuristic(claim, resolved, verification_index)
+
         parsed = _parse_verification_response(response, claim, resolved, evidence_text)
 
         if parsed:
@@ -174,20 +181,8 @@ def _verify_claim_with_llm(
     except Exception as e:
         print(f"[verification_agent] LLM verification failed: {e}")
 
-    # Fallback: return insufficient evidence
-    return VerificationResult(
-        verification_id=f"v{verification_index}",
-        claim_id=claim.claim_id,
-        claim_text=claim.claim_text,
-        ref_id=resolved.ref_id,
-        citation_title=resolved.matched_title,
-        resolution_status=resolved.resolution_status,
-        verdict=VerificationVerdict.INSUFFICIENT_EVIDENCE,
-        confidence=0.3,
-        explanation="Could not determine support level from the available evidence.",
-        evidence_span=None,
-        used_text_source="abstract"
-    )
+    # Fallback to heuristic verification
+    return _verify_claim_heuristic(claim, resolved, verification_index)
 
 
 def _build_verification_prompt(claim_text: str, evidence_text: str) -> str:
@@ -235,6 +230,76 @@ def _call_llm(prompt: str) -> str:
     except Exception as e:
         print(f"[verification_agent] Ollama call failed: {e}")
         return ""
+
+
+def _verify_claim_heuristic(
+    claim,
+    resolved,
+    verification_index: int
+) -> VerificationResult:
+    """
+    Fallback heuristic verification when LLM is unavailable.
+    Makes a best-effort judgment based on text overlap and presence of evidence.
+    """
+    claim_text = claim.claim_text.lower()
+    evidence_text = resolved.abstract.lower() if resolved.abstract else ""
+
+    if not evidence_text:
+        return VerificationResult(
+            verification_id=f"v{verification_index}",
+            claim_id=claim.claim_id,
+            claim_text=claim.claim_text,
+            ref_id=resolved.ref_id,
+            citation_title=resolved.matched_title,
+            resolution_status=resolved.resolution_status,
+            verdict=VerificationVerdict.INSUFFICIENT_EVIDENCE,
+            confidence=0.3,
+            explanation="No abstract available for the cited paper to verify this claim.",
+            evidence_span=None,
+            used_text_source="abstract"
+        )
+
+    # Check for keyword overlap between claim and evidence
+    claim_words = set(claim_text.split())
+    evidence_words = set(evidence_text.split())
+
+    # Filter out common stop words
+    stop_words = {"the", "a", "an", "is", "are", "was", "were", "be", "been", "being", "have", "has", "had", "do", "does", "did", "will", "would", "could", "should", "may", "might", "must", "shall", "can", "need", "dare", "ought", "used", "to", "of", "in", "for", "on", "with", "at", "by", "from", "as", "into", "through", "during", "before", "after", "above", "below", "between", "under", "again", "further", "then", "once", "here", "there", "when", "where", "why", "how", "all", "each", "few", "more", "most", "other", "some", "such", "no", "nor", "not", "only", "own", "same", "so", "than", "too", "very", "just", "and", "but", "if", "or", "because", "until", "while", "although", "though", "after", "before", "that", "this", "these", "those", "it", "its"}
+
+    claim_content = claim_words - stop_words
+    evidence_content = evidence_words - stop_words
+
+    # Calculate overlap
+    overlap = claim_content & evidence_content
+    overlap_ratio = len(overlap) / max(len(claim_content), 1)
+
+    # Make judgment based on overlap
+    if overlap_ratio >= 0.4:
+        verdict = VerificationVerdict.SUPPORTED
+        confidence = min(0.7, 0.4 + overlap_ratio)
+        explanation = f"Key terms from the claim appear in the cited evidence ({int(overlap_ratio * 100)}% keyword overlap)."
+    elif overlap_ratio >= 0.2:
+        verdict = VerificationVerdict.PARTIALLY_SUPPORTED
+        confidence = 0.5
+        explanation = f"Some key terms from the claim appear in the evidence, but the connection is partial ({int(overlap_ratio * 100)}% keyword overlap)."
+    else:
+        verdict = VerificationVerdict.INSUFFICIENT_EVIDENCE
+        confidence = 0.3
+        explanation = f"Limited keyword overlap ({int(overlap_ratio * 100)}%) suggests the evidence may not directly support this claim."
+
+    return VerificationResult(
+        verification_id=f"v{verification_index}",
+        claim_id=claim.claim_id,
+        claim_text=claim.claim_text,
+        ref_id=resolved.ref_id,
+        citation_title=resolved.matched_title,
+        resolution_status=resolved.resolution_status,
+        verdict=verdict,
+        confidence=confidence,
+        explanation=explanation,
+        evidence_span=None,
+        used_text_source="abstract"
+    )
 
 
 def _parse_verification_response(
