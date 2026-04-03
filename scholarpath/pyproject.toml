@@ -1,0 +1,24 @@
+[project]
+name = "scholarpath"
+version = "0.1.0"
+description = "scholarpath using crewAI"
+authors = [{ name = "Your Name", email = "you@example.com" }]
+requires-python = ">=3.10,<3.14"
+dependencies = [
+    "crewai[tools]==1.13.0"
+]
+
+[project.scripts]
+scholarpath = "scholarpath.main:run"
+run_crew = "scholarpath.main:run"
+train = "scholarpath.main:train"
+replay = "scholarpath.main:replay"
+test = "scholarpath.main:test"
+run_with_trigger = "scholarpath.main:run_with_trigger"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.crewai]
+type = "crew"

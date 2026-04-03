@@ -1,0 +1,28 @@
+extraction_task:
+  description: >
+    Process the following academic text to extract key claims and their exact citations. 
+    Make sure to match every distinct claim to its source citation in the text.
+    Text: {pdf_text}
+  expected_output: >
+    A list of numbered extracted claims, along with the citation(s) they cite in the text.
+  agent: claim_extractor
+
+verification_task:
+  description: >
+    Review each claim and citation provided by the extractor.
+    Use the search tools available to you to pull abstracts or details of the cited 
+    papers (via Semantic Scholar or arXiv) to check if the claim is valid.
+    Classify each claim as supported, partially supported, or unsupported.
+    At the end, generate a final 'Trust Score' out of 100 for the entire document based on the ratio.
+  expected_output: >
+    A detailed JSON-like structure or structured markdown listing each claim, the citation, the API verification result, the classification, and the ultimate Trust Score.
+  agent: fact_checker
+
+roadmap_task:
+  description: >
+    Filter out all 'unsupported' and 'partially supported' claims from the fact checker report.
+    Take the exclusively 'supported' claims and build a logical, prerequisite-based 
+    learning roadmap for a student trying to understand this topic.
+  expected_output: >
+    A fully fledged markdown roadmap with prerequisites, main topics, and learning modules built ONLY on trusted, verified claims.
+  agent: roadmap_generator
