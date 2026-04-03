@@ -28,7 +28,33 @@ def extract_search_query(text: str):
 
 
 # 🔥 STEP 2: Fetch metadata (NOT just abstract)
-def fetch_paper_metadata(reference: str):
+def fetch_paper_metadata(reference: str, doi: str = None):
+    if doi:
+        print("\n🔎 Searching by DOI:", doi)
+        try:
+            res = requests.get(
+                f"https://api.semanticscholar.org/graph/v1/paper/DOI:{doi}",
+                params={"fields": "title,abstract,year,authors"},
+                timeout=5
+            )
+            if res.status_code == 200:
+                paper = res.json()
+                abstract = paper.get("abstract")
+                if abstract and len(abstract) > 50:
+                    print("✅ Found paper by DOI:", paper.get("title"))
+                    return {
+                        "title": paper.get("title"),
+                        "abstract": abstract,
+                        "year": paper.get("year"),
+                        "authors": [a["name"] for a in paper.get("authors", [])]
+                    }
+                else:
+                    print("⚠️ Abstract missing/too short via DOI")
+            else:
+                print(f"❌ DOI Search failed: HTTP {res.status_code}")
+        except Exception as e:
+            print("❌ DOI Fetch error:", e)
+
     query = extract_search_query(reference)
 
     if not query or len(query) < 5:

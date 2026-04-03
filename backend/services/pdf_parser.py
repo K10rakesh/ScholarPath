@@ -29,14 +29,20 @@ def extract_references(text: str):
     # 🔥 Match patterns like:
     # [1] ...
     # 1. ...
-    pattern = re.findall(r"(?:\[(\d+)\]|\n\s*(\d+)\.)\s*(.*)", ref_text)
+    matches = list(re.finditer(r"(?:\[(\d+)\]|^\s*(\d+)\.)", ref_text, re.MULTILINE))
 
     references = {}
 
-    for match in pattern:
-        num = match[0] or match[1]
-        content = match[2].strip()
-
+    for i in range(len(matches)):
+        match = matches[i]
+        num = match.group(1) or match.group(2)
+        
+        start_idx = match.end()
+        end_idx = matches[i+1].start() if i + 1 < len(matches) else len(ref_text)
+        
+        content = ref_text[start_idx:end_idx].strip()
+        content = re.sub(r'\s+', ' ', content)
+        
         if content:
             references[num] = content
 

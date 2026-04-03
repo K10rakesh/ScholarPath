@@ -22,18 +22,21 @@ def extract_score(text):
     return int(numbers[0]) if numbers else 0
 
 
-def verify_claim_with_gemini(claim, abstract):
+import json
+
+def verify_claim_with_gemini(claim, metadata):
     try:
+        metadata_str = json.dumps(metadata, indent=2)
         prompt = f"""
-        Compare the following claim and research abstract.
+        Compare the following claim and the publication metadata of the cited reference.
 
         Claim:
         {claim}
 
-        Abstract:
-        {abstract}
+        Reference Metadata (JSON):
+        {metadata_str}
 
-        Give a similarity score from 0 to 100.
+        Based on the title, authors, venue, abstract (if present), and other metadata, give a similarity score from 0 to 100 representing how well the source metadata corresponds to or supports the claim.
 
         Return ONLY a number.
         """
@@ -64,7 +67,7 @@ def verify_all_claims(data):
     for item in data:
         score = verify_claim_with_gemini(
             item["claim"],
-            item["abstract"]
+            item["metadata"]
         )
 
         results.append({
