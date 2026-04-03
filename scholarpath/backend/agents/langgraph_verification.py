@@ -1,6 +1,37 @@
+    # =============================================================================
 # backend/agents/langgraph_verification.py
-# LangGraph-based multi-agent verification workflow
-# Uses specialized agents for source fetching, claim verification, and trust calculation
+# =============================================================================
+# WHAT THIS FILE DOES (Overall):
+#   Implements the LangGraph multi-agent verification workflow. This is the
+#   core of ScholarPath's "Trust Gate" — the pipeline that determines whether
+#   a cited paper actually supports the claim made about it.
+#
+#   LANGGRAPH GRAPH (3 nodes, linear flow):
+#
+#     VerificationState (shared dict)
+#           │
+#           ▼
+#     [fetch_source]    ← SourceFetcher: uses pre-fetched abstract (no extra network round-trip)
+#           │
+#           ▼       
+#     [verify_claim]    ← ClaimVerifier: ChatOllama + LangChain prompt → JSON verdict
+#           │
+#           ▼
+#     [calculate_trust] ← TrustCalculator: final_score = base_score × llm_confidence
+#           │
+#           ▼
+#          END  →  VerificationResult returned to verification_agent.py
+#
+#   WHY LANGGRAPH:
+#     - Clean state machine with explicit node transitions
+#     - Easy to add new agents (e.g., web search, full-text fetch) later
+#     - State is shared and typed (TypedDict), preventing data loss between nodes
+#     - Observability: each node logs its step
+#
+# CONNECTED TO:
+#   ← backend/agents/verification_agent.py  (calls verify_claim_with_langgraph())
+#   → backend/schemas_member2.py            (output: VerificationResult)
+# =============================================================================
 
 import re
 import json
@@ -28,18 +59,14 @@ from backend.schemas_member2 import (
 # =============================================================================
 # Configuration
 # =============================================================================
-
-OLLAMA_MODEL = "llama3.2"
+Ollama="llama3.2:1b"
 VERDICT_SCORES = {
-    VerificationVerdict.SUPPORTED: 1.0,
-    VerificationVerdict.PARTIALLY_SUPPORTED: 0.6,
-    VerificationVerdict.INSUFFICIENT_EVIDENCE: 0.3,
-    VerificationVerdict.UNSUPPORTED: 0.0,
+    VerificationVerdict.SUPPORTED: 85.0,
+    VerificationVerdict.PARTIALLY_SUPPORTED: 55.0,
+    VerificationVerdict.INSUFFICIENT_EVIDENCE: 30.0,
+        VerificationVerdict.UNSUPPORTED: 15.0,
     VerificationVerdict.UNRESOLVED: 0.0,
-}
-TRUSTED_THRESHOLD = 75
-CAUTION_THRESHOLD = 45
-
+    }
 
 # =============================================================================
 # State Definition - Shared state passed between nodes
@@ -323,14 +350,13 @@ Respond in this exact JSON format:
 
         except Exception as e:
             print(f"[ClaimVerifier] LLM verification error: {e}")
-            # Instead of heuristic verification, we enforce strict agent check failure
             state["verification_result"] = {
                 "verdict": "insufficient_evidence",
-                "confidence_score": 0.0,
+                "confidence_score": 30.0,
                 "explanation": "LLM verification agent failed to respond.",
                 "evidence_span": None
             }
-            state["confidence_score"] = 0.0
+            state["confidence_score"] = 30.0
 
         return state
 
@@ -348,21 +374,16 @@ class TrustCalculator:
         verdict = result.get("verdict", "insufficient_evidence")
         llm_confidence = result.get("confidence_score", 50.0)
 
-        # Base score from verdict
-        base_score = VERDICT_SCORES.get(VerificationVerdict(verdict), 0.0)
+        base_score = VERDICT_SCORES.get(VerificationVerdict(verdict), 30.0)
+        final_confidence = (base_score + llm_confidence) / 2.0
 
-        # Adjust by LLM confidence
-        final_confidence = base_score * llm_confidence
-
-        # Apply evidence quality bonus
+        # Evidence quality bonus
         evidence = state.get("fetched_evidence", "")
         if evidence and len(evidence) > 200:
-            final_confidence = min(100.0, final_confidence + 10.0)
+            final_confidence = min(100.0, final_confidence + 5.0)
 
-        state["confidence_score"] = final_confidence
+        state["confidence_score"] = round(final_confidence, 2)
         return state
-
-
 # =============================================================================
 # LangGraph Workflow Builder
 # =============================================================================

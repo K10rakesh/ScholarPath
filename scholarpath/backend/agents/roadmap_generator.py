@@ -1,4 +1,30 @@
+# =============================================================================
 # backend/agents/roadmap_generator.py
+# =============================================================================
+# WHAT THIS FILE DOES (Overall):
+#   The Roadmap Generator Agent (Contract 05). Takes the verified claims and
+#   trust report from verification_agent.py, extracts the paper's target topic
+#   and key concepts, then builds a prerequisite-ordered learning roadmap.
+#
+#   Two-tier generation strategy:
+#     1. LLM roadmap (primary) — uses Ollama llama3.2 to intelligently order
+#        prerequisites based on domain knowledge. Only runs if trust gate passes.
+#     2. Heuristic roadmap (fallback) — static template: Mathematical Foundations
+#        → Core Domain Concepts → Key Concepts from paper → Target Topic.
+#        Always works, no LLM needed.
+#
+#   TRUST GATE:
+#     If verification trust_score < LOW_TRUST threshold, the LLM roadmap is
+#     skipped (we don't want to base learning on unreliable content). The
+#     heuristic roadmap is still generated with a warning flag.
+#
+#   Also generates FlowchartData with (x, y) positioning for visual rendering.
+#
+# CONNECTED TO:
+#   ← backend/main.py                   (calls generate_roadmap())
+#   → backend/schemas_member2.py        (input: ParsedPaper + VerificationReportOutput,
+#                                         output: RoadmapResponseOutput)
+# =============================================================================
 
 import json
 import re

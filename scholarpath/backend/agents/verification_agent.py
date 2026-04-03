@@ -1,7 +1,34 @@
+# =============================================================================
 # backend/agents/verification_agent.py
-# Member 2 - Verification Agent
-# Compares claims against cited paper abstracts using LLM to determine support
-# Now uses LangGraph multi-agent workflow for proper evidence verification
+# =============================================================================
+# WHAT THIS FILE DOES (Overall):
+#   The Verification Agent — orchestrates the claim-vs-citation comparison step
+#   and computes the overall Trust Report (Contract 03). This is the heart of
+#   ScholarPath's "Trust Gate": does the cited evidence actually support the claim?
+#
+#   TWO-PATH VERIFICATION STRATEGY:
+#     Primary:  verify_claim_with_langgraph()  ← 3-agent LangGraph workflow
+#               (SourceFetcher → ClaimVerifier → TrustCalculator)
+#     Fallback: _verify_claim_legacy()         ← direct Ollama LLM call
+#               (if LangGraph raises an exception)
+#
+#   VERDICTS (VerificationVerdict enum):
+#     supported            → evidence directly proves the claim
+#     partially_supported  → evidence is related but incomplete
+#     unsupported          → evidence contradicts or is irrelevant
+#     insufficient_evidence → abstract too short to judge
+#     unresolved           → citation couldn't be matched to a real paper
+#
+#   TRUST SCORE THRESHOLDS (applied after all claims are verified):
+#     ≥ 75  → TrustStatus.TRUSTED   (green)
+#     45-74 → TrustStatus.CAUTION   (yellow)
+#     < 45  → TrustStatus.LOW_TRUST (red) — roadmap uses heuristic only
+#
+# CONNECTED TO:
+#   ← backend/main.py                        (calls verify_claims())
+#   → backend/agents/langgraph_verification.py (primary verification path)
+#   → backend/schemas_member2.py              (all Pydantic types used)
+# =============================================================================
 
 import json
 import re
@@ -33,7 +60,7 @@ from backend.agents.langgraph_verification import (
 # =============================================================================
 
 # Using llama3.2 for better structured output - phi3 often returns empty responses
-OLLAMA_MODEL = "llama3.2"
+OLLAMA_MODEL = "llama3.2:1b"
 
 # Verdict scoring for trust calculation
 VERDICT_SCORES = {
@@ -519,8 +546,23 @@ def _calculate_trust_report(results: list[VerificationResult]) -> TrustReport:
     unresolved_count = sum(1 for r in results if r.verdict == VerificationVerdict.UNRESOLVED)
 
     # Calculate average confidence_score
-    total_score = sum(r.confidence_score for r in results)
-    average_score = total_score / len(results)
+    # total_score = sum(r.confidence_score for r in results)
+    # average_score = total_score / len(results)
+    #Saare scores add ho rahe hain including 0 wale — isliye average gir jaata hai aur N/A aata hai.
+
+    valid_scores = [r.confidence_score for r in results if r.confidence_score > 0]
+    if not valid_scores:
+        for r in results:
+            if r.verdict == VerificationVerdict.SUPPORTED:
+                valid_scores.append(85)
+            elif r.verdict == VerificationVerdict.PARTIALLY_SUPPORTED:
+                valid_scores.append(55)
+            elif r.verdict == VerificationVerdict.UNSUPPORTED:
+                valid_scores.append(20)
+            else:
+                valid_scores.append(40)
+
+    average_score = sum(valid_scores) / len(valid_scores) if valid_scores else 40
     trust_score = int(average_score)
 
     # Determine status

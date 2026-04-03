@@ -1,6 +1,29 @@
+# =============================================================================
 # backend/prompts/claim_extraction.py
-# The prompt template for the LLM claim extraction step.
-# {sentences} is the only placeholder — filled in at runtime.
+# =============================================================================
+# WHAT THIS FILE DOES (Overall):
+#   Stores the LLM system prompt for the claim extraction step.
+#   This is the instruction card given to llama3.2 to identify verifiable
+#   factual claims in academic text.
+#
+#   {sentences} is the only runtime placeholder — filled in by claim_extractor.py
+#   with a batch of up to 5 citation-bearing sentences at a time.
+#
+#   PROMPT DESIGN DECISIONS:
+#   1. Explicit SKIP list — prevents the model from treating opinions,
+#      future work, and definitions as verifiable claims. Without this,
+#      LLMs tend to over-extract everything containing a citation.
+#   2. "[idx:N]" prefix format — lets the model return the sentence_index
+#      so we can map claims back to their section without character offsets.
+#   3. "Return JSON array ONLY" — strict instruction to prevent markdown
+#      fences, prose explanations, or preambles that break json.loads().
+#   4. "If zero valid claims, return []" — prevents the model from
+#      hallucinating claims when none exist in the batch.
+#
+# CONNECTED TO:
+#   ← backend/agents/claim_extractor.py  (imports CLAIM_EXTRACTION_PROMPT,
+#                                          calls .format(sentences=...))
+# =============================================================================
 
 CLAIM_EXTRACTION_PROMPT = """
 You are an academic claim extractor. Below are sentences from a research paper.

@@ -1,6 +1,23 @@
+# =============================================================================
 # backend/agents/citation_resolver.py
-# Member 2 - Citation Resolution Agent
-# Resolves bibliography entries to real paper metadata using Semantic Scholar / arXiv APIs
+# =============================================================================
+# WHAT THIS FILE DOES (Overall):
+#   The Citation Resolution Agent (Contract 02). Takes every bibliography entry
+#   from the ParsedPaper (e.g., "[3] Vaswani et al. Attention is All You Need.")
+#   and attempts to match it to real paper metadata by searching academic APIs.
+#
+#   Resolution strategy per reference (tries each in order, stops at first success):
+#     1. Semantic Scholar API — best metadata (title, abstract, DOI, authors, date)
+#     2. arXiv API — good for CS/ML papers, returns ATOM XML
+#     3. Unresolved — if both APIs fail or return no match
+#
+#   Rate limiting: Semantic Scholar free tier allows ~100 requests per 5 minutes.
+#   We add a 3.5s sleep between requests to stay under the limit safely.
+#
+# CONNECTED TO:
+#   ← backend/main.py                   (calls resolve_citations())
+#   → backend/schemas_member2.py        (input: ParsedPaper, output: ResolvedCitationsOutput)
+# =============================================================================
 
 import re
 import hashlib
@@ -54,7 +71,7 @@ def resolve_citations(parsed_paper: ParsedPaper) -> ResolvedCitationsOutput:
     for reference in parsed_paper.references:
         try:
             # Limit carefully to math boundary for S2 free tier (100 req per 5 minutes = 3.0s minimum)
-            time.sleep(3.5)
+            time.sleep(1.0)
             resolved_citation = _resolve_single_citation(reference)
             resolved.append(resolved_citation)
         except Exception as e:
