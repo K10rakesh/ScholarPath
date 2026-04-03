@@ -1,6 +1,7 @@
 # backend/agents/verification_agent.py
 # Member 2 - Verification Agent
 # Compares claims against cited paper abstracts using LLM to determine support
+# Now uses LangGraph multi-agent workflow for proper evidence verification
 
 import json
 import re
@@ -18,6 +19,12 @@ from backend.schemas_member2 import (
     ProcessingStatus,
     ParsedPaper,
     ResolvedCitationsOutput,
+)
+
+# Import LangGraph-based verification workflow
+from backend.agents.langgraph_verification import (
+    verify_claim_with_langgraph,
+    verify_claims_batch,
 )
 
 
@@ -52,6 +59,7 @@ def verify_claims(
 ) -> VerificationReportOutput:
     """
     Main entry point for claim verification.
+    Uses LangGraph multi-agent workflow for proper evidence verification.
 
     Args:
         parsed_paper: ParsedPaper from Member 1 (Contract 01)
@@ -69,7 +77,7 @@ def verify_claims(
         c.ref_id: c for c in resolved_citations.resolved_citations
     }
 
-    # Process each claim
+    # Process each claim using LangGraph workflow
     for idx, claim in enumerate(parsed_paper.claims):
         # Find the primary citation for this claim (use first one if multiple)
         if not claim.citations:
@@ -101,49 +109,21 @@ def verify_claims(
             ))
             continue
 
-        # Get the evidence text - try multiple sources for better verification
-        # Priority: full_text (if available) > abstract > source_url for web lookup
-        evidence_text = resolved.abstract
-        used_source = "abstract"
-
-        # Check if we have additional evidence from the parsed paper's full text
-        # that might contain more details about the cited work
-        if parsed_paper.full_text and resolved.matched_title:
-            # Look for mentions of this citation in the full text
-            # This gives context about how the citation is used
-            citation_mentions = _find_citation_context(parsed_paper.full_text, resolved.matched_title)
-            if citation_mentions:
-                evidence_text = f"{evidence_text or ''}\n\nContext from paper: {citation_mentions}"
-                used_source = "abstract_with_context"
-
-        if not evidence_text or len(evidence_text.strip()) < 50:
-            # Try to fetch more content from source URL if available
-            if resolved.source_url:
-                fetched_content = _fetch_additional_evidence(resolved.source_url)
-                if fetched_content:
-                    evidence_text = fetched_content
-                    used_source = "fetched_content"
-
-        if not evidence_text or len(evidence_text.strip()) < 50:
-            # No abstract available - mark as insufficient evidence
-            verification_results.append(VerificationResult(
-                verification_id=f"v{idx + 1}",
-                claim_id=claim.claim_id,
+        # Use LangGraph multi-agent workflow for verification
+        # This fetches real evidence from cited sources and verifies claims properly
+        try:
+            result = verify_claim_with_langgraph(
                 claim_text=claim.claim_text,
-                ref_id=primary_ref_id,
-                citation_title=resolved.matched_title,
-                resolution_status=resolved.resolution_status,
-                verdict=VerificationVerdict.INSUFFICIENT_EVIDENCE,
-                confidence=0.5,
-                explanation="The cited paper was found but no abstract is available for comparison.",
-                evidence_span=None,
-                used_text_source="abstract"
-            ))
-            continue
-
-        # Call LLM to verify the claim against the evidence
-        result = _verify_claim_with_llm(claim, resolved, evidence_text, idx + 1)
-        verification_results.append(result)
+                resolved_citation=resolved,
+                paper_full_text=parsed_paper.full_text,
+                claim_id=claim.claim_id
+            )
+            verification_results.append(result)
+        except Exception as e:
+            print(f"[verification_agent] LangGraph workflow error for claim {claim.claim_id}: {e}")
+            # Fallback to legacy verification
+            result = _verify_claim_legacy(claim, resolved, idx + 1)
+            verification_results.append(result)
 
     # Calculate trust report
     trust_report = _calculate_trust_report(verification_results)
@@ -172,22 +152,57 @@ def verify_claims(
 # Private helpers
 # =============================================================================
 
-def _verify_claim_with_llm(
+def _verify_claim_legacy(
     claim,
     resolved,
-    evidence_text: str,
     verification_index: int
 ) -> VerificationResult:
     """
-    Use LLM to verify if a claim is supported by the cited evidence.
-    Falls back to heuristic verification if LLM is unavailable.
+    Legacy verification method (fallback when LangGraph is unavailable).
+    Uses local LLM with abstract-based verification.
     """
+    # Get the evidence text
+    evidence_text = resolved.abstract
+    used_source = "abstract"
+
+    # Check if we have additional evidence from the parsed paper's full text
+    if resolved.matched_title and hasattr(resolved, 'paper_full_text'):
+        citation_mentions = _find_citation_context(
+            resolved.paper_full_text,
+            resolved.matched_title
+        )
+        if citation_mentions:
+            evidence_text = f"{evidence_text or ''}\n\nContext from paper: {citation_mentions}"
+            used_source = "abstract_with_context"
+
+    if not evidence_text or len(evidence_text.strip()) < 50:
+        if resolved.source_url:
+            fetched_content = _fetch_additional_evidence(resolved.source_url)
+            if fetched_content:
+                evidence_text = fetched_content
+                used_source = "fetched_content"
+
+    if not evidence_text or len(evidence_text.strip()) < 50:
+        return VerificationResult(
+            verification_id=f"v{verification_index}",
+            claim_id=claim.claim_id,
+            claim_text=claim.claim_text,
+            ref_id=resolved.ref_id,
+            citation_title=resolved.matched_title,
+            resolution_status=resolved.resolution_status,
+            verdict=VerificationVerdict.INSUFFICIENT_EVIDENCE,
+            confidence=0.5,
+            explanation="The cited paper was found but no abstract is available for comparison.",
+            evidence_span=None,
+            used_text_source="abstract"
+        )
+
+    # Call LLM to verify
     prompt = _build_verification_prompt(claim.claim_text, evidence_text)
 
     try:
         response = _call_llm(prompt)
 
-        # Check if LLM returned empty (model unavailable)
         if not response or not response.strip():
             print(f"[verification_agent] LLM returned empty response, using heuristic fallback")
             return _verify_claim_heuristic(claim, resolved, verification_index)
@@ -200,7 +215,6 @@ def _verify_claim_with_llm(
     except Exception as e:
         print(f"[verification_agent] LLM verification failed: {e}")
 
-    # Fallback to heuristic verification
     return _verify_claim_heuristic(claim, resolved, verification_index)
 
 
@@ -403,7 +417,6 @@ def _find_citation_context(full_text: str, matched_title: str) -> str:
     title_fragment = " ".join(title_words)
 
     # Search for title fragment in full text (case insensitive)
-    import re
     pattern = re.compile(re.escape(title_fragment), re.IGNORECASE)
     matches = list(pattern.finditer(full_text))
 
@@ -425,23 +438,23 @@ def _find_citation_context(full_text: str, matched_title: str) -> str:
 def _fetch_additional_evidence(source_url: str) -> str:
     """
     Fetch additional content from the source URL.
-    For now, this is a placeholder - in production, use a proper web scraper.
+    Only fetches from trusted sources (arxiv, semanticscholar).
     """
     try:
         import httpx
-        # Only fetch from trusted sources (arxiv, semanticscholar)
         if "arxiv.org" in source_url or "semanticscholar.org" in source_url:
             with httpx.Client(timeout=5.0, follow_redirects=True) as client:
                 response = client.get(source_url)
                 if response.status_code == 200:
-                    # Extract meta description or first paragraph
                     html = response.text
-                    # Simple extraction - look for meta description
-                    import re
-                    meta_match = re.search(r'<meta[^>]+name=["\']description["\'][^>]+content=["\']([^"\']+)["\']', html, re.IGNORECASE)
+                    # Extract meta description
+                    meta_match = re.search(
+                        r'<meta[^>]+name=["\']description["\'][^>]+content=["\']([^"\']+)["\']',
+                        html, re.IGNORECASE
+                    )
                     if meta_match:
                         return meta_match.group(1)
-                    # Fallback: extract first 500 chars of visible text
+                    # Fallback: extract visible text
                     text = re.sub(r'<[^>]+>', ' ', html)
                     return text[:500].strip()
     except Exception as e:
