@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>ScholarPath</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div class="container">
+    <h1>ScholarPath Upload</h1>
+    <div>
+        <input type="file" id="pdfFile" accept="application/pdf">
+        <button onclick="uploadPDF()">Submit PDF</button>
+    </div>
+
+    <!-- Stats & Feedback Area -->
+    <div id="results-area" style="display: none;">
+        
+        <h3>Verified Topics</h3>
+        <div id="topics-list" class="topics-grid">
+            <!-- Dynamically populated boxes go here -->
+        </div>
+
+        <h3>Agent-Generated Roadmap</h3>
+        <div id="roadmap-list" class="roadmap-grid">
+            <!-- Dynamic roadmap steps -->
+        </div>
+    </div>
+</div>
+
+<script src="script.js"></script>
+
+</body>
+</html>

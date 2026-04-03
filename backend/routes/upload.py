@@ -73,8 +73,12 @@ async def upload_pdf(file: UploadFile = File(...)):
             "message": "No valid abstracts found (query too noisy)"
         }
 
-    # ✅ STEP 5: Gemini verification
+    # ✅ STEP 5: Gemini verification & total score calc
     verification_output = verify_all_claims(verification_input)
+        
+    # ✅ STEP 6: Execute Crew AI Roadmap Agent
+    from backend.crew.crew import run_roadmap_agent
+    roadmap_output = run_roadmap_agent(verification_output)
 
     # ✅ FINAL RESPONSE
     return {
@@ -83,5 +87,6 @@ async def upload_pdf(file: UploadFile = File(...)):
         "mapped_claims": mapped_data[:5],
         "source_check": checked_sources,
         "verification_input": verification_input,  # debug
-        "verification": verification_output
+        "verification": verification_output,
+        "roadmap": roadmap_output
     }
