@@ -119,11 +119,12 @@ def _resolve_single_citation(reference) -> ResolvedCitation:
     # Try Semantic Scholar first
     result = _search_semantic_scholar(potential_title)
     if result:
+        authors = [a.get("name") for a in result.get("authors", []) if isinstance(a, dict) and a.get("name")]
         return ResolvedCitation(
             ref_id=ref_id,
             resolution_status=ResolutionStatus.RESOLVED,
             matched_title=result.get("title"),
-            authors=result.get("authors", []),
+            authors=authors,
             year=_parse_year(result.get("publicationDate")),
             abstract=result.get("abstract"),
             doi=result.get("externalIds", {}).get("DOI"),

@@ -2,7 +2,7 @@
 # Pydantic models for Member 2's portion: Citation Resolution, Verification, and Roadmap
 # These models strictly follow the JSON contracts shared across the team
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from typing import Optional, Literal
 from enum import Enum
 
@@ -136,10 +136,23 @@ class VerificationResult(BaseModel):
     citation_title: Optional[str] = None
     resolution_status: ResolutionStatus
     verdict: VerificationVerdict
-    confidence: float = Field(..., ge=0.0, le=1.0)
+    confidence_score: float = Field(..., ge=0.0, le=100.0)
     explanation: str
     evidence_span: Optional[str] = None
     used_text_source: str = "abstract"  # "abstract" or "full_text"
+
+    @property
+    def confidence(self) -> float:
+        """Backward-compatible 0-1 confidence for legacy consumers."""
+        return self.confidence_score / 100.0
+
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_confidence_fields(cls, values):
+        if isinstance(values, dict):
+            if "confidence_score" not in values and "confidence" in values:
+                values["confidence_score"] = float(values["confidence"]) * 100.0
+        return values
 
 
 class TrustReport(BaseModel):
@@ -173,7 +186,19 @@ class VerifiedClaimSummary(BaseModel):
     claim_id: str
     claim_text: str
     verdict: VerificationVerdict
-    confidence: float
+    confidence_score: float = Field(..., ge=0.0, le=100.0)
+
+    @property
+    def confidence(self) -> float:
+        return self.confidence_score / 100.0
+
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_confidence_fields(cls, values):
+        if isinstance(values, dict):
+            if "confidence_score" not in values and "confidence" in values:
+                values["confidence_score"] = float(values["confidence"]) * 100.0
+        return values
 
 
 class TrustReportSummary(BaseModel):
@@ -273,8 +298,20 @@ class ClaimsOverviewItem(BaseModel):
     claim_text: str
     citations: list[str]
     verdict: VerificationVerdict
-    confidence: float
+    confidence_score: float = Field(..., ge=0.0, le=100.0)
     explanation: str
+
+    @property
+    def confidence(self) -> float:
+        return self.confidence_score / 100.0
+
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_confidence_fields(cls, values):
+        if isinstance(values, dict):
+            if "confidence_score" not in values and "confidence" in values:
+                values["confidence_score"] = float(values["confidence"]) * 100.0
+        return values
 
 
 class RoadmapSummary(BaseModel):

@@ -103,7 +103,7 @@ def verify_claims(
                 citation_title=None,
                 resolution_status=ResolutionStatus.UNRESOLVED,
                 verdict=VerificationVerdict.UNRESOLVED,
-                confidence=0.0,
+                confidence_score=0.0,
                 explanation="Citation could not be resolved to a real paper.",
                 used_text_source="abstract"
             ))
@@ -191,7 +191,7 @@ def _verify_claim_legacy(
             citation_title=resolved.matched_title,
             resolution_status=resolved.resolution_status,
             verdict=VerificationVerdict.INSUFFICIENT_EVIDENCE,
-            confidence=0.5,
+            confidence_score=50.0,
             explanation="The cited paper was found but no abstract is available for comparison.",
             evidence_span=None,
             used_text_source="abstract"
@@ -213,7 +213,7 @@ def _verify_claim_legacy(
                 citation_title=resolved.matched_title,
                 resolution_status=resolved.resolution_status,
                 verdict=VerificationVerdict.INSUFFICIENT_EVIDENCE,
-                confidence=0.0,
+                confidence_score=0.0,
                 explanation="LLM agent returned an empty response.",
                 evidence_span=None,
                 used_text_source="abstract"
@@ -235,7 +235,7 @@ def _verify_claim_legacy(
         citation_title=resolved.matched_title,
         resolution_status=resolved.resolution_status,
         verdict=VerificationVerdict.INSUFFICIENT_EVIDENCE,
-        confidence=0.0,
+        confidence_score=0.0,
         explanation="LLM failed to verify evidence in legacy mode.",
         evidence_span=None,
         used_text_source="abstract"
@@ -264,7 +264,7 @@ Determine the verdict:
 Respond in this EXACT JSON format (no markdown, no explanation):
 {{
     "verdict": "supported" | "partially_supported" | "unsupported" | "insufficient_evidence",
-    "confidence": 0.0-1.0,
+    "confidence_score": 0.0 to 100.0,
     "explanation": "Brief explanation of your reasoning",
     "evidence_span": "Quote the specific part of the evidence that supports or contradicts"
 }}
@@ -328,7 +328,7 @@ def _verify_claim_heuristic(
             citation_title=resolved.matched_title,
             resolution_status=resolved.resolution_status,
             verdict=VerificationVerdict.INSUFFICIENT_EVIDENCE,
-            confidence=0.3,
+            confidence_score=30.0,
             explanation="No abstract available for the cited paper to verify this claim.",
             evidence_span=None,
             used_text_source="abstract"
@@ -351,15 +351,15 @@ def _verify_claim_heuristic(
     # Make judgment based on overlap
     if overlap_ratio >= 0.4:
         verdict = VerificationVerdict.SUPPORTED
-        confidence = min(0.7, 0.4 + overlap_ratio)
+        confidence_score = min(70.0, (0.4 + overlap_ratio) * 100)
         explanation = f"Key terms from the claim appear in the cited evidence ({int(overlap_ratio * 100)}% keyword overlap)."
     elif overlap_ratio >= 0.2:
         verdict = VerificationVerdict.PARTIALLY_SUPPORTED
-        confidence = 0.5
+        confidence_score = 50.0
         explanation = f"Some key terms from the claim appear in the evidence, but the connection is partial ({int(overlap_ratio * 100)}% keyword overlap)."
     else:
         verdict = VerificationVerdict.INSUFFICIENT_EVIDENCE
-        confidence = 0.3
+        confidence_score = 30.0
         explanation = f"Limited keyword overlap ({int(overlap_ratio * 100)}%) suggests the evidence may not directly support this claim."
 
     return VerificationResult(
@@ -370,7 +370,7 @@ def _verify_claim_heuristic(
         citation_title=resolved.matched_title,
         resolution_status=resolved.resolution_status,
         verdict=verdict,
-        confidence=confidence,
+        confidence_score=confidence_score,
         explanation=explanation,
         evidence_span=None,
         used_text_source="abstract"
@@ -403,8 +403,17 @@ def _parse_verification_response(
         except ValueError:
             verdict = VerificationVerdict.INSUFFICIENT_EVIDENCE
 
-        confidence = float(data.get("confidence", 0.5))
-        confidence = max(0.0, min(1.0, confidence))  # Clamp to [0, 1]
+        confidence_score = float(data.get("confidence_score", data.get("confidence", 50.0)))
+        
+        # If the LLM returned a 0-1 value instead of 0-100, scale it
+        if confidence_score <= 1.0 and confidence_score > 0.0:
+            if "confidence_score" not in data: # It likely used the old 'confidence' key which was 0-1
+                confidence_score = confidence_score * 100.0
+            else:
+               # Just to be safe if it returned a raw decimal out of 1
+               pass
+        
+        confidence_score = max(0.0, min(100.0, confidence_score))  # Clamp to [0, 100]
 
         return VerificationResult(
             verification_id=f"v{hash(claim.claim_id) % 1000 + 1}",
@@ -414,7 +423,7 @@ def _parse_verification_response(
             citation_title=resolved.matched_title,
             resolution_status=resolved.resolution_status,
             verdict=verdict,
-            confidence=confidence,
+            confidence_score=confidence_score,
             explanation=data.get("explanation", "No explanation provided"),
             evidence_span=data.get("evidence_span"),
             used_text_source="abstract"
@@ -509,10 +518,10 @@ def _calculate_trust_report(results: list[VerificationResult]) -> TrustReport:
     insufficient_count = sum(1 for r in results if r.verdict == VerificationVerdict.INSUFFICIENT_EVIDENCE)
     unresolved_count = sum(1 for r in results if r.verdict == VerificationVerdict.UNRESOLVED)
 
-    # Calculate weighted score
-    total_score = sum(VERDICT_SCORES[r.verdict] for r in results)
+    # Calculate average confidence_score
+    total_score = sum(r.confidence_score for r in results)
     average_score = total_score / len(results)
-    trust_score = int(average_score * 100)
+    trust_score = int(average_score)
 
     # Determine status
     if trust_score >= TRUSTED_THRESHOLD:

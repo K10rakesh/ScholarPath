@@ -368,7 +368,7 @@ def full_pipeline_endpoint(doc_id: str):
                 claim_text=r.claim_text,
                 citations=[r.ref_id],
                 verdict=r.verdict,
-                confidence=r.confidence,
+                confidence_score=r.confidence_score,
                 explanation=r.explanation
             )
             for r in verification.verification_results
@@ -425,7 +425,7 @@ async def get_final_report(doc_id: str):
                 claim_text=r.claim_text,
                 citations=[r.ref_id],
                 verdict=r.verdict,
-                confidence=r.confidence,
+                confidence_score=r.confidence_score,
                 explanation=r.explanation
             )
             for r in verification.verification_results

@@ -267,7 +267,7 @@ Determine if the evidence supports the claim. Consider:
 Respond in this exact JSON format:
 {{
     "verdict": "supported" | "partially_supported" | "unsupported" | "insufficient_evidence",
-    "confidence": 0.0-1.0,
+    "confidence_score": 0.0 to 100.0,
     "explanation": "Brief explanation of your reasoning",
     "evidence_span": "Quote the specific evidence that supports or contradicts"
 }}""")
@@ -283,11 +283,11 @@ Respond in this exact JSON format:
         if not evidence or len(evidence.strip()) < 20:
             state["verification_result"] = {
                 "verdict": "insufficient_evidence",
-                "confidence": 0.3,
+                "confidence_score": 30.0,
                 "explanation": "No substantial evidence available from the cited source.",
                 "evidence_span": None
             }
-            state["confidence_score"] = 0.3
+            state["confidence_score"] = 30.0
             return state
 
         try:
@@ -308,23 +308,25 @@ Respond in this exact JSON format:
                 verdict = "insufficient_evidence"
 
             # Validate confidence
-            confidence = float(result.get("confidence", 0.5))
-            confidence = max(0.0, min(1.0, confidence))
+            confidence_score = float(result.get("confidence_score", result.get("confidence", 50.0)))
+            if confidence_score <= 1.0 and confidence_score > 0.0 and "confidence_score" not in result:
+                confidence_score = confidence_score * 100.0
+            confidence_score = max(0.0, min(100.0, confidence_score))
 
             state["verification_result"] = {
                 "verdict": verdict,
-                "confidence": confidence,
+                "confidence_score": confidence_score,
                 "explanation": result.get("explanation", ""),
                 "evidence_span": result.get("evidence_span")
             }
-            state["confidence_score"] = confidence
+            state["confidence_score"] = confidence_score
 
         except Exception as e:
             print(f"[ClaimVerifier] LLM verification error: {e}")
             # Instead of heuristic verification, we enforce strict agent check failure
             state["verification_result"] = {
                 "verdict": "insufficient_evidence",
-                "confidence": 0.0,
+                "confidence_score": 0.0,
                 "explanation": "LLM verification agent failed to respond.",
                 "evidence_span": None
             }
@@ -344,7 +346,7 @@ class TrustCalculator:
         """Calculate final confidence score for this verification"""
         result = state.get("verification_result", {})
         verdict = result.get("verdict", "insufficient_evidence")
-        llm_confidence = result.get("confidence", 0.5)
+        llm_confidence = result.get("confidence_score", 50.0)
 
         # Base score from verdict
         base_score = VERDICT_SCORES.get(VerificationVerdict(verdict), 0.0)
@@ -355,7 +357,7 @@ class TrustCalculator:
         # Apply evidence quality bonus
         evidence = state.get("fetched_evidence", "")
         if evidence and len(evidence) > 200:
-            final_confidence = min(1.0, final_confidence + 0.1)
+            final_confidence = min(100.0, final_confidence + 10.0)
 
         state["confidence_score"] = final_confidence
         return state
@@ -431,7 +433,7 @@ def verify_claim_with_langgraph(
         claim_id: ID of the claim for tracking
 
     Returns:
-        VerificationResult with verdict, confidence, and explanation
+        VerificationResult with verdict, confidence score, and explanation
     """
     workflow = VerificationWorkflow()
     result_state = workflow.run(claim_text, resolved_citation, paper_full_text)
@@ -454,7 +456,7 @@ def verify_claim_with_langgraph(
         citation_title=resolved_citation.matched_title,
         resolution_status=resolved_citation.resolution_status,
         verdict=verdict,
-        confidence=confidence_score,
+        confidence_score=confidence_score,
         explanation=verification_data.get("explanation", "Verification completed"),
         evidence_span=verification_data.get("evidence_span"),
         used_text_source="fetched_evidence" if result_state.get("fetched_evidence") else "abstract"
@@ -503,7 +505,7 @@ def verify_claims_batch(
                 citation_title=None,
                 resolution_status=ResolutionStatus.UNRESOLVED,
                 verdict=VerificationVerdict.UNRESOLVED,
-                confidence=0.0,
+                confidence_score=0.0,
                 explanation="Citation could not be resolved to a real paper.",
                 used_text_source="abstract"
             ))
@@ -534,7 +536,7 @@ def verify_claims_batch(
             citation_title=resolved.matched_title,
             resolution_status=resolved.resolution_status,
             verdict=verdict,
-            confidence=confidence_score,
+            confidence_score=confidence_score,
             explanation=verification_data.get("explanation", "Verification completed"),
             evidence_span=verification_data.get("evidence_span"),
             used_text_source="fetched_evidence" if result_state.get("fetched_evidence") else "abstract"

@@ -102,10 +102,22 @@ class VerificationResult(BaseModel):
     citation_title: Optional[str] = None
     resolution_status: str
     verdict: str  # "supported" | "partially_supported" | "unsupported" | "insufficient_evidence" | "unresolved"
-    confidence: float
+    confidence_score: float  # Score from 0 to 100 based on comparison with abstract
     explanation: str
     evidence_span: Optional[str] = None
     used_text_source: Optional[str] = None
+
+    @property
+    def confidence(self) -> float:
+        return self.confidence_score / 100.0
+
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_confidence_fields(cls, values):
+        if isinstance(values, dict):
+            if "confidence_score" not in values and "confidence" in values:
+                values["confidence_score"] = float(values["confidence"]) * 100.0
+        return values
 
 class TrustReport(BaseModel):
     trust_score: int
@@ -132,7 +144,19 @@ class VerifiedClaimSimple(BaseModel):
     claim_id: str
     claim_text: str
     verdict: str
-    confidence: float
+    confidence_score: float
+
+    @property
+    def confidence(self) -> float:
+        return self.confidence_score / 100.0
+
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_confidence_fields(cls, values):
+        if isinstance(values, dict):
+            if "confidence_score" not in values and "confidence" in values:
+                values["confidence_score"] = float(values["confidence"]) * 100.0
+        return values
 
 class RoadmapRequest(BaseModel):
     doc_id: str
@@ -177,8 +201,20 @@ class ClaimOverview(BaseModel):
     claim_text: str
     citations: list[str]
     verdict: str
-    confidence: float
+    confidence_score: float
     explanation: str
+
+    @property
+    def confidence(self) -> float:
+        return self.confidence_score / 100.0
+
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_confidence_fields(cls, values):
+        if isinstance(values, dict):
+            if "confidence_score" not in values and "confidence" in values:
+                values["confidence_score"] = float(values["confidence"]) * 100.0
+        return values
 
 class PaperBrief(BaseModel):
     title: str
@@ -198,4 +234,4 @@ class FinalReport(BaseModel):
     claims_overview: list[ClaimOverview]
     roadmap: RoadmapBrief
     processing_status: str = "success"
-    errors: list[dict] = []
+    errors: list[dict] = []
