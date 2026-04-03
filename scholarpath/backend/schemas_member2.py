@@ -230,6 +230,25 @@ class ResourceSuggestion(BaseModel):
     value: str
 
 
+class FlowchartNode(BaseModel):
+    """Node in the visual flowchart with positioning info"""
+    node_id: str
+    label: str
+    node_type: RoadmapNodeType
+    level: int
+    description: str
+    x_position: float = 0.0  # 0-100 percentage for horizontal positioning
+    y_position: float = 0.0  # 0-100 percentage for vertical positioning
+
+
+class FlowchartData(BaseModel):
+    """Visual flowchart data for rendering the learning path"""
+    nodes: list[FlowchartNode]
+    edges: list[RoadmapEdge]
+    layout_type: str = "vertical"  # "vertical", "horizontal", "tree"
+    flowchart_summary: str = "Learning path flowchart"
+
+
 class RoadmapResponseOutput(BaseModel):
     """Contract 05 - 05_roadmap_response.json"""
     doc_id: str
@@ -239,6 +258,7 @@ class RoadmapResponseOutput(BaseModel):
     edges: list[RoadmapEdge]
     reading_order: list[str]
     resource_suggestions: list[ResourceSuggestion] = []
+    flowchart: FlowchartData = None  # Optional flowchart visualization data
     processing_status: str = ProcessingStatus.SUCCESS
     errors: list[dict] = []
 
@@ -263,6 +283,7 @@ class RoadmapSummary(BaseModel):
     nodes: list[RoadmapNode]
     edges: list[RoadmapEdge]
     reading_order: list[str]
+    flowchart: FlowchartData = None  # Optional flowchart visualization data
 
 
 class PaperSummary(BaseModel):

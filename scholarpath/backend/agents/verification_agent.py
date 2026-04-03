@@ -25,8 +25,8 @@ from backend.schemas_member2 import (
 # Configuration
 # =============================================================================
 
-# OLLAMA_MODEL = "llama3.2"
-OLLAMA_MODEL = "phi3"  # Lighter model, works well for structured tasks
+# Using llama3.2 for better structured output - phi3 often returns empty responses
+OLLAMA_MODEL = "llama3.2"
 
 # Verdict scoring for trust calculation
 VERDICT_SCORES = {
@@ -101,11 +101,30 @@ def verify_claims(
             ))
             continue
 
-        # Get the evidence text (abstract or full text)
+        # Get the evidence text - try multiple sources for better verification
+        # Priority: full_text (if available) > abstract > source_url for web lookup
         evidence_text = resolved.abstract
         used_source = "abstract"
 
-        if not evidence_text:
+        # Check if we have additional evidence from the parsed paper's full text
+        # that might contain more details about the cited work
+        if parsed_paper.full_text and resolved.matched_title:
+            # Look for mentions of this citation in the full text
+            # This gives context about how the citation is used
+            citation_mentions = _find_citation_context(parsed_paper.full_text, resolved.matched_title)
+            if citation_mentions:
+                evidence_text = f"{evidence_text or ''}\n\nContext from paper: {citation_mentions}"
+                used_source = "abstract_with_context"
+
+        if not evidence_text or len(evidence_text.strip()) < 50:
+            # Try to fetch more content from source URL if available
+            if resolved.source_url:
+                fetched_content = _fetch_additional_evidence(resolved.source_url)
+                if fetched_content:
+                    evidence_text = fetched_content
+                    used_source = "fetched_content"
+
+        if not evidence_text or len(evidence_text.strip()) < 50:
             # No abstract available - mark as insufficient evidence
             verification_results.append(VerificationResult(
                 verification_id=f"v{idx + 1}",
@@ -218,18 +237,36 @@ JSON:"""
 def _call_llm(prompt: str) -> str:
     """
     Call local Ollama model for verification.
-    Returns raw text response.
+    Returns raw text response. Includes retry logic for reliability.
     """
-    try:
-        response = ollama.chat(
-            model=OLLAMA_MODEL,
-            messages=[{"role": "user", "content": prompt}],
-            options={"temperature": 0.1}  # Low temperature for consistent judgments
-        )
-        return response["message"]["content"]
-    except Exception as e:
-        print(f"[verification_agent] Ollama call failed: {e}")
-        return ""
+    max_retries = 2
+    last_error = None
+
+    for attempt in range(max_retries):
+        try:
+            response = ollama.chat(
+                model=OLLAMA_MODEL,
+                messages=[
+                    {"role": "system", "content": "You are a precise fact-checking assistant. You ALWAYS respond with valid JSON only, no explanations or markdown."},
+                    {"role": "user", "content": prompt}
+                ],
+                options={
+                    "temperature": 0.1,  # Low temperature for consistent judgments
+                    "top_p": 0.9,
+                    "timeout": 60000  # 60 second timeout
+                }
+            )
+            content = response["message"]["content"]
+            if content and content.strip():
+                return content
+            print(f"[verification_agent] Attempt {attempt + 1} returned empty content")
+            last_error = "Empty response"
+        except Exception as e:
+            print(f"[verification_agent] Ollama call attempt {attempt + 1} failed: {e}")
+            last_error = e
+
+    print(f"[verification_agent] All {max_retries} attempts failed")
+    return ""
 
 
 def _verify_claim_heuristic(
@@ -351,6 +388,65 @@ def _parse_verification_response(
     except Exception as e:
         print(f"[verification_agent] Parse error: {e}")
         return None
+
+
+def _find_citation_context(full_text: str, matched_title: str) -> str:
+    """
+    Find where in the full text a cited paper is mentioned and extract context.
+    This helps verify claims by understanding how the citation is used.
+    """
+    if not matched_title or len(matched_title) < 5:
+        return ""
+
+    # Look for partial title matches (first 3-4 words of title)
+    title_words = matched_title.split()[:4]
+    title_fragment = " ".join(title_words)
+
+    # Search for title fragment in full text (case insensitive)
+    import re
+    pattern = re.compile(re.escape(title_fragment), re.IGNORECASE)
+    matches = list(pattern.finditer(full_text))
+
+    if not matches:
+        return ""
+
+    # Extract context around the first match (window of ~200 chars)
+    match = matches[0]
+    start = max(0, match.start() - 100)
+    end = min(len(full_text), match.end() + 100)
+
+    context = full_text[start:end]
+    # Clean up whitespace
+    context = " ".join(context.split())
+
+    return context
+
+
+def _fetch_additional_evidence(source_url: str) -> str:
+    """
+    Fetch additional content from the source URL.
+    For now, this is a placeholder - in production, use a proper web scraper.
+    """
+    try:
+        import httpx
+        # Only fetch from trusted sources (arxiv, semanticscholar)
+        if "arxiv.org" in source_url or "semanticscholar.org" in source_url:
+            with httpx.Client(timeout=5.0, follow_redirects=True) as client:
+                response = client.get(source_url)
+                if response.status_code == 200:
+                    # Extract meta description or first paragraph
+                    html = response.text
+                    # Simple extraction - look for meta description
+                    import re
+                    meta_match = re.search(r'<meta[^>]+name=["\']description["\'][^>]+content=["\']([^"\']+)["\']', html, re.IGNORECASE)
+                    if meta_match:
+                        return meta_match.group(1)
+                    # Fallback: extract first 500 chars of visible text
+                    text = re.sub(r'<[^>]+>', ' ', html)
+                    return text[:500].strip()
+    except Exception as e:
+        print(f"[verification_agent] Failed to fetch additional evidence: {e}")
+    return ""
 
 
 def _calculate_trust_report(results: list[VerificationResult]) -> TrustReport:

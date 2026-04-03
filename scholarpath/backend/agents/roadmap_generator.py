@@ -15,9 +15,12 @@ from backend.schemas_member2 import (
     ResourceSuggestion,
     ProcessingStatus,
     TrustStatus,
+    FlowchartNode,
+    FlowchartData,
 )
 # You can adjust this to match the team's preference
-OLLAMA_MODEL = "phi3"
+# Using llama3.2 for better structured output - phi3 often returns empty responses
+OLLAMA_MODEL = "llama3.2"
 
 
 def generate_roadmap(parsed_paper: ParsedPaper, verification_report: VerificationReportOutput) -> RoadmapResponseOutput:
@@ -55,6 +58,9 @@ def generate_roadmap(parsed_paper: ParsedPaper, verification_report: Verificatio
             key_concepts=key_concepts,
             doc_id=parsed_paper.doc_id
         )
+
+    # Generate flowchart visualization data
+    roadmap.flowchart = _generate_flowchart(roadmap)
 
     # Add trust warning if applicable
     if verification_report.trust_report.status == TrustStatus.LOW_TRUST:
@@ -251,17 +257,35 @@ JSON:"""
 
 
 def _call_llm(prompt: str) -> str:
-    """Call local Ollama model."""
-    try:
-        response = ollama.chat(
-            model=OLLAMA_MODEL,
-            messages=[{"role": "user", "content": prompt}],
-            options={"temperature": 0.2}
-        )
-        return response["message"]["content"]
-    except Exception as e:
-        print(f"[roadmap_generator] Ollama call failed: {e}")
-        return ""
+    """Call local Ollama model with retry logic for reliability."""
+    max_retries = 2
+    last_error = None
+
+    for attempt in range(max_retries):
+        try:
+            response = ollama.chat(
+                model=OLLAMA_MODEL,
+                messages=[
+                    {"role": "system", "content": "You are a curriculum design expert. You ALWAYS respond with valid JSON only, no explanations or markdown."},
+                    {"role": "user", "content": prompt}
+                ],
+                options={
+                    "temperature": 0.2,
+                    "top_p": 0.9,
+                    "timeout": 60000  # 60 second timeout
+                }
+            )
+            content = response["message"]["content"]
+            if content and content.strip():
+                return content
+            print(f"[roadmap_generator] Attempt {attempt + 1} returned empty content")
+            last_error = "Empty response"
+        except Exception as e:
+            print(f"[roadmap_generator] Ollama call attempt {attempt + 1} failed: {e}")
+            last_error = e
+
+    print(f"[roadmap_generator] All {max_retries} attempts failed")
+    return ""
 
 
 def _parse_roadmap_response(
@@ -401,4 +425,50 @@ def _generate_heuristic_roadmap(
             )
         ],
         processing_status=ProcessingStatus.SUCCESS
+    )
+
+
+def _generate_flowchart(roadmap: RoadmapResponseOutput) -> FlowchartData:
+    """
+    Generate visual flowchart data from the roadmap.
+    Creates positioned nodes for visual rendering of the learning path.
+    """
+    nodes = roadmap.nodes
+    total_nodes = len(nodes)
+
+    flowchart_nodes = []
+    for i, node in enumerate(nodes):
+        # Calculate position based on level and order
+        # Vertical layout: nodes flow from top to bottom
+        y_position = (i / max(total_nodes - 1, 1)) * 100 if total_nodes > 1 else 50
+
+        # Horizontal position: center for single path, or staggered for branches
+        if node.node_type == "target":
+            x_position = 50  # Center for target
+        elif node.node_type == "prerequisite":
+            x_position = 30  # Left side for prerequisites
+        else:
+            x_position = 50  # Center for intermediate
+
+        flowchart_nodes.append(FlowchartNode(
+            node_id=node.node_id,
+            label=node.label,
+            node_type=node.node_type,
+            level=node.level,
+            description=node.description,
+            x_position=x_position,
+            y_position=y_position
+        ))
+
+    # Create flowchart edges (same as roadmap edges)
+    flowchart_edges = roadmap.edges
+
+    # Determine layout type based on node structure
+    layout_type = "vertical"  # Default to vertical flow
+
+    return FlowchartData(
+        nodes=flowchart_nodes,
+        edges=flowchart_edges,
+        layout_type=layout_type,
+        flowchart_summary=f"Visual learning path with {total_nodes} nodes from basics to {roadmap.target_topic}"
     )

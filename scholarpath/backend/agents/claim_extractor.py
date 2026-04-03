@@ -8,8 +8,8 @@ import ollama
 from backend.schemas import Claim, Section
 from backend.prompts.claim_extraction import CLAIM_EXTRACTION_PROMPT
 
-# OLLAMA_MODEL = "llama3.2"
-OLLAMA_MODEL = "phi3"
+# Using llama3.2 for better structured output - phi3 often returns empty responses
+OLLAMA_MODEL = "llama3.2"
 def extract_claims(
     citation_sentences: list[dict],
     sections: list[Section]
@@ -122,19 +122,37 @@ def _call_llm(prompt: str) -> str:
     """
     Calls local Ollama model. Completely free, no internet needed.
     Returns raw text. Never raises — returns "[]" on failure.
+    Includes retry logic for reliability.
     """
-    try:
-        response = ollama.chat(
-            model=OLLAMA_MODEL,
-            messages=[{"role": "user", "content": prompt}],
-            options={"temperature": 0}  # deterministic output
-        )
-        return response["message"]["content"]
+    max_retries = 2
+    last_error = None
 
-    except Exception as e:
-        print(f"[claim_extractor] Ollama call failed: {e}")
-        print("  → Is Ollama running? Start it with: ollama serve")
-        return "[]"
+    for attempt in range(max_retries):
+        try:
+            response = ollama.chat(
+                model=OLLAMA_MODEL,
+                messages=[
+                    {"role": "system", "content": "You are a precise claim extraction assistant. You ALWAYS respond with valid JSON arrays only, no explanations or markdown."},
+                    {"role": "user", "content": prompt}
+                ],
+                options={
+                    "temperature": 0,  # deterministic output
+                    "top_p": 0.9,
+                    "timeout": 60000  # 60 second timeout
+                }
+            )
+            content = response["message"]["content"]
+            if content and content.strip():
+                return content
+            print(f"[claim_extractor] Attempt {attempt + 1} returned empty content")
+            last_error = "Empty response"
+        except Exception as e:
+            print(f"[claim_extractor] Ollama call attempt {attempt + 1} failed: {e}")
+            last_error = e
+
+    print(f"[claim_extractor] All {max_retries} attempts failed")
+    print("  → Is Ollama running? Start it with: ollama serve")
+    return "[]"
 
 
 def _extract_claims_heuristic(
