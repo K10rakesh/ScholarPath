@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>ScholarPath</title>
+    <style>
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+
+        .container {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <input type="file" id="pdfFile" accept="application/pdf">
+    <button onclick="uploadPDF()">Submit</button>
+</div>
+
+<script>
+async function uploadPDF() {
+    const file = document.getElementById("pdfFile").files[0];
+
+    if (!file) return alert("Select PDF");
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const res = await fetch("http://localhost:8000/upload", {
+        method: "POST",
+        body: formData
+    });
+
+    const data = await res.json();
+    console.log(data);
+    alert("Uploaded!");
+}
+</script>
+
+
+</body>
+</html>
