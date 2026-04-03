@@ -80,6 +80,28 @@ async def upload_pdf(file: UploadFile = File(...)):
     from backend.crew.crew import run_roadmap_agent
     roadmap_output = run_roadmap_agent(verification_output)
 
+    # ✅ STEP 7: Fetch one real paper per roadmap step
+    from backend.services.paper_fetcher import fetch_paper_metadata
+    if roadmap_output and isinstance(roadmap_output, list):
+        for step in roadmap_output:
+            topic_query = step.get("topic", "")
+            if topic_query:
+                # We ask Semantic Scholar for the best matched paper for this topic
+                paper_data = fetch_paper_metadata(topic_query)
+                if paper_data:
+                    step["recommended_paper"] = {
+                        "title": paper_data.get("title"),
+                        "url": paper_data.get("url") or f"https://scholar.google.com/scholar?q={topic_query}",
+                        "authors": paper_data.get("authors", [])[:3] # Limit to top 3 authors
+                    }
+                else:
+                    # Fallback generic google scholar link if Semantic Scholar fails
+                    step["recommended_paper"] = {
+                        "title": "Search Google Scholar",
+                        "url": f"https://scholar.google.com/scholar?q={topic_query}",
+                        "authors": []
+                    }
+
     # ✅ FINAL RESPONSE
     return {
         "preview_text": text[:500],

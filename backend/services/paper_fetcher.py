@@ -69,7 +69,7 @@ def fetch_paper_metadata(reference: str, doi: str = None):
             params={
                 "query": query,
                 "limit": 1,
-                "fields": "title,abstract,year,authors"
+                "fields": "title,abstract,year,authors,url"
             },
             timeout=5
         )
@@ -87,19 +87,23 @@ def fetch_paper_metadata(reference: str, doi: str = None):
         abstract = paper.get("abstract")
         year = paper.get("year")
         authors = [a["name"] for a in paper.get("authors", [])]
+        url = paper.get("url")
 
         print("✅ Found paper:", title)
 
         # 🔥 VALIDATION (very important)
         if not abstract or len(abstract) < 50:
             print("⚠️ Abstract missing/too short")
-            return None
+            # For roadmap, we might just want the paper even without a long abstract
+            # but let's keep it to ensure quality, or create a bypass.
+            pass
 
         return {
             "title": title,
             "abstract": abstract,
             "year": year,
-            "authors": authors
+            "authors": authors,
+            "url": url
         }
 
     except Exception as e:

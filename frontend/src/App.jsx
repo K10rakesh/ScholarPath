@@ -83,6 +83,20 @@ function App() {
                     Step {step.step}: {step.topic}
                   </h4>
                   <p>{step.description}</p>
+                  {step.recommended_paper && (
+                    <div className="recommended-paper" style={{ marginTop: "15px", padding: "10px", backgroundColor: "#fff", borderLeft: "4px solid #3498db" }}>
+                      <strong>Suggested Reading:</strong>
+                      <br/>
+                      <a href={step.recommended_paper.url} target="_blank" rel="noopener noreferrer" style={{ color: "#3498db", textDecoration: "none", fontWeight: "bold" }}>
+                        {step.recommended_paper.title}
+                      </a>
+                      {step.recommended_paper.authors && step.recommended_paper.authors.length > 0 && (
+                        <p style={{ fontSize: "0.85em", color: "#7f8c8d", margin: "4px 0 0 0" }}>
+                          Authors: {step.recommended_paper.authors.join(", ")}
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
               ))
             ) : (
