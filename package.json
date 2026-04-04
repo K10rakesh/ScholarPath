@@ -1,6 +1,0 @@
-{
-  "dependencies": {
-    "@supabase/supabase-js": "^2.101.1",
-    "reactflow": "^11.11.4"
-  }
-}
