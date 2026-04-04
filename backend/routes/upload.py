@@ -4,7 +4,6 @@ import shutil
 
 # Services
 from backend.services.citation_checker import check_sources
-from backend.services.paper_fetcher import fetch_paper_metadata
 from backend.services.claim_verifier import verify_all_claims
 
 from backend.services.pdf_parser import (
@@ -19,12 +18,10 @@ router = APIRouter()
 UPLOAD_DIR = "backend/uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-
 # 🔥 helper: shorten text for better search
 def get_short_query(text, max_words=10):
     words = text.split()
     return " ".join(words[:max_words])
-
 
 @router.post("/upload")
 async def upload_pdf(file: UploadFile = File(...)):
@@ -33,18 +30,22 @@ async def upload_pdf(file: UploadFile = File(...)):
 
     # ✅ STEP 1: Save file
     file_path = os.path.join(UPLOAD_DIR, file.filename)
-
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
-    # ✅ STEP 2: Parse PDF
+    # ✅ STEP 2: Parse PDF (NOW PASSES file_path for PyMuPDF rects)
     text = extract_full_text(file_path)
     references = extract_references(text)
-    claims = extract_claims_with_citations(text)
+    claims = extract_claims_with_citations(text, pdf_path=file_path)
     mapped_data = map_claims_to_references(claims, references)
 
-    # ✅ STEP 3: Source existence check
-    checked_sources = check_sources(mapped_data[:5])
+    # ✅ STEP 3: Diverse Source check
+    import random
+    
+    # Shuffle and select 10 diverse claims instead of only parsing the intro  
+    sample_size = min(10, len(mapped_data))
+    selected_claims = random.sample(mapped_data, sample_size)
+    checked_sources = check_sources(selected_claims)
 
     # ✅ STEP 4: Format verification input (metadata only)
     verification_input = []
@@ -62,18 +63,18 @@ async def upload_pdf(file: UploadFile = File(...)):
     print("\n--- VERIFICATION INPUT ---\n")
     print(verification_input)
 
-    # ❗ If nothing valid found
+    # � � If nothing valid found
     if not verification_input:
         return {
             "preview_text": text[:500],
             "total_claims_found": len(claims),
-            "mapped_claims": mapped_data[:5],
+            "mapped_claims": selected_claims,
             "source_check": checked_sources,
             "verification": [],
             "message": "No valid abstracts found (query too noisy)"
         }
 
-    # ✅ STEP 5: Gemini verification & total score calc
+    # ✅ STEP 5: Gemini/Groq verification & total score calc
     verification_output = verify_all_claims(verification_input)
         
     # ✅ STEP 6: Execute Crew AI Roadmap Agent
@@ -102,13 +103,11 @@ async def upload_pdf(file: UploadFile = File(...)):
                         "authors": []
                     }
 
-    # ✅ FINAL RESPONSE
     return {
         "preview_text": text[:500],
         "total_claims_found": len(claims),
-        "mapped_claims": mapped_data[:5],
+        "mapped_claims": selected_claims,
         "source_check": checked_sources,
-        "verification_input": verification_input,  # debug
         "verification": verification_output,
         "roadmap": roadmap_output
     }

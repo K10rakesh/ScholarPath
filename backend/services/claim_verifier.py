@@ -26,7 +26,18 @@ import json
 
 def verify_claim_with_gemini(claim, metadata):
     try:
-        metadata_str = json.dumps(metadata, indent=2)
+        # Extract only the essential parts of the metadata to prevent Groq token limits/errors
+        # and truncate massive abstracts to a safe length (e.g. 2000 chars)
+        title_list = metadata.get("title", [])
+        title = title_list[0] if title_list else "Unknown Title"
+        abstract = metadata.get("abstract", "")[:2000]
+
+        clean_metadata = {
+            "title": title,
+            "abstract": abstract
+        }
+
+        metadata_str = json.dumps(clean_metadata, indent=2)
         prompt = f"""
         Analyze the following claim and the publication metadata of the cited reference.
 
@@ -70,6 +81,8 @@ def verify_claim_with_gemini(claim, metadata):
         return {"score": 0, "topic": "None"}
 
 
+import time
+
 def verify_all_claims(data):
     results = []
 
@@ -80,7 +93,7 @@ def verify_all_claims(data):
         )
         score = verification_result["score"]
         topic = verification_result["topic"]
-        
+
         # Assign color based on score
         if score <= 50:
             color = "red"
@@ -96,5 +109,8 @@ def verify_all_claims(data):
             "topic": topic,
             "color": color
         })
+
+        # Sleep briefly to avoid hitting Groq's Free Tier Rate Limits (RPM)
+        time.sleep(1)
 
     return results
