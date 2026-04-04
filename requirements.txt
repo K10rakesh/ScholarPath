@@ -7,4 +7,5 @@ langchain
 openai
 requests
 google-generativeai
-python-dotenv   
+python-dotenv
+groq
