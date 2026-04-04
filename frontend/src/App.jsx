@@ -10,8 +10,22 @@ function App() {
   const [history, setHistory] = useState([]);
   const [file, setFile] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [elapsedTime, setElapsedTime] = useState(0);
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    let interval = null;
+    if (loading) {
+      interval = setInterval(() => {
+        setElapsedTime((prev) => prev + 1);
+      }, 1000);
+    } else {
+      clearInterval(interval);
+      setElapsedTime(0);
+    }
+    return () => clearInterval(interval);
+  }, [loading]);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -145,7 +159,7 @@ function App() {
           <div className="upload-section">
           <input type="file" accept="application/pdf" onChange={handleFileChange} />
           <button onClick={handleUpload} disabled={loading || !file}>
-            {loading ? "Processing..." : "Submit PDF"}
+            {loading ? `Processing... (${elapsedTime}s)` : "Submit PDF"}
           </button>
         </div>
 
