@@ -12,6 +12,17 @@ def clean_query(ref: str):
 
 def check_crossref(query):
     try:
+        # If the query is just a straight DOI URL, use the direct endpoint for 100% accuracy
+        doi_match = re.search(r"doi\.org/(10\.\d{4,9}/[-._;()/:A-Z0-9]+)", query, re.IGNORECASE)
+        if doi_match:
+            doi = doi_match.group(1)
+            res = requests.get(f"{CROSSREF_URL}/{doi}", timeout=5)
+            data = res.json()
+            if data.get("message"):
+                return data["message"]
+            return None
+
+        # Otherwise do a standard fuzzy keyword query search
         res = requests.get(
             CROSSREF_URL,
             params={
