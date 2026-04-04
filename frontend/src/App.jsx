@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import Auth from "./components/Auth";
 import RoadmapFlow from "./components/RoadmapFlow";
+import ParticlesBackground from "./components/ParticlesBackground";
 import { supabase } from "./supabaseClient";
 import "./App.css";
 
@@ -105,6 +106,7 @@ function App() {
 
   return (
     <div className="layout-container">
+      <ParticlesBackground />
       {/* Sidebar for History */}
       <aside className="sidebar">
         <h3>History</h3>
@@ -135,10 +137,11 @@ function App() {
       </aside>
 
       {/* Main Content Area */}
-      <div className="container main-content">
-        <h1>ScholarPath Upload</h1>
-        
-        <div className="upload-section">
+      <div style={{ flex: 1, display: 'flex', justifyContent: 'center', padding: '40px', overflowY: 'auto', position: 'relative', zIndex: 10, marginLeft: '250px' }}>
+        <div className="container" style={{ width: '100%', maxWidth: '1000px', height: 'fit-content' }}>
+          <h1>ScholarPath Upload</h1>
+          
+          <div className="upload-section">
           <input type="file" accept="application/pdf" onChange={handleFileChange} />
           <button onClick={handleUpload} disabled={loading || !file}>
             {loading ? "Processing..." : "Submit PDF"}
@@ -171,6 +174,7 @@ function App() {
           </div>
         </div>
       )}
+        </div>
       </div>
     </div>
   );
