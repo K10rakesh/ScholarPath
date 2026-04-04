@@ -1,0 +1,125 @@
+.auth-page {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  width: 100vw;
+  background: linear-gradient(135deg, #2c3e50 0%, #3498db 100%);
+}
+
+.auth-card {
+  background: white;
+  padding: 40px;
+  border-radius: 12px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+  width: 100%;
+  max-width: 400px;
+  box-sizing: border-box;
+}
+
+.auth-header {
+  text-align: center;
+  margin-bottom: 25px;
+}
+.auth-header h2 {
+  margin: 0 0 10px;
+  color: #2c3e50;
+  font-size: 26px;
+}
+.auth-header p {
+  margin: 0;
+  color: #7f8c8d;
+  font-size: 15px;
+}
+
+.auth-error {
+  background: #fee2e2;
+  color: #e74c3c;
+  padding: 12px;
+  border-radius: 6px;
+  font-size: 14px;
+  margin-bottom: 20px;
+  text-align: center;
+  border: 1px solid #f5c6cb;
+}
+.auth-success {
+  background: #e8f8f5;
+  color: #27ae60;
+  padding: 12px;
+  border-radius: 6px;
+  font-size: 14px;
+  margin-bottom: 20px;
+  text-align: center;
+  border: 1px solid #a3e4d7;
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: left;
+}
+.input-group label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #34495e;
+}
+.input-group input {
+  padding: 12px 15px;
+  border: 1px solid #bdc3c7;
+  border-radius: 6px;
+  font-size: 15px;
+  transition: all 0.2s ease-in-out;
+  background-color: #fcfcfc;
+}
+.input-group input:focus {
+  outline: none;
+  background-color: #fff;
+  border-color: #3498db;
+  box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.2);
+}
+
+.auth-primary-btn {
+  background: #3498db;
+  color: white;
+  padding: 14px;
+  font-size: 16px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  margin-top: 10px;
+  transition: background 0.2s;
+  width: 100%;
+}
+.auth-primary-btn:hover {
+  background: #2980b9;
+}
+.auth-primary-btn:disabled {
+  background: #95a5a6;
+  cursor: not-allowed;
+}
+
+.auth-footer {
+  margin-top: 25px;
+  text-align: center;
+  font-size: 14px;
+  color: #7f8c8d;
+}
+.auth-footer span {
+  color: #3498db;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+.auth-footer span:hover {
+  color: #2980b9;
+  text-decoration: underline;
+}
+
