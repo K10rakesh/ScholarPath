@@ -26,7 +26,7 @@ def extract_search_query(text: str):
     # 🔥 Keep only first 8–10 words (CRITICAL)
     return " ".join(words[:10])
 
-
+ 
 # 🔥 STEP 2: Fetch metadata (NOT just abstract)
 def fetch_paper_metadata(reference: str, doi: str = None):
     if doi:
