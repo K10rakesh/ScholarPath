@@ -1,4 +1,4 @@
-from fastapi import APIRouter, UploadFile, File
+﻿from fastapi import APIRouter, UploadFile, File
 import os
 import shutil
 
@@ -18,28 +18,28 @@ router = APIRouter()
 UPLOAD_DIR = "backend/uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-# 🔥 helper: shorten text for better search
+# ðŸ”¥ helper: shorten text for better search
 def get_short_query(text, max_words=10):
     words = text.split()
     return " ".join(words[:max_words])
 
 @router.post("/upload")
-async def upload_pdf(file: UploadFile = File(...)):
+def upload_pdf(file: UploadFile = File(...)):
     if file.content_type != "application/pdf":
         return {"error": "Only PDF allowed"}
 
-    # ✅ STEP 1: Save file
+    # âœ… STEP 1: Save file
     file_path = os.path.join(UPLOAD_DIR, file.filename)
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
-    # ✅ STEP 2: Parse PDF (NOW PASSES file_path for PyMuPDF rects)
+    # âœ… STEP 2: Parse PDF (NOW PASSES file_path for PyMuPDF rects)
     text = extract_full_text(file_path)
     references = extract_references(text)
     claims = extract_claims_with_citations(text, pdf_path=file_path)
     mapped_data = map_claims_to_references(claims, references)
 
-    # ✅ STEP 3: Diverse Source check
+    # âœ… STEP 3: Diverse Source check
     import random
     
     # Shuffle and select 10 diverse claims instead of only parsing the intro  
@@ -47,7 +47,7 @@ async def upload_pdf(file: UploadFile = File(...)):
     selected_claims = random.sample(mapped_data, sample_size)
     checked_sources = check_sources(selected_claims)
 
-    # ✅ STEP 4: Format verification input (metadata only)
+    # âœ… STEP 4: Format verification input (metadata only)
     verification_input = []
 
     for item in checked_sources:
@@ -63,7 +63,7 @@ async def upload_pdf(file: UploadFile = File(...)):
     print("\n--- VERIFICATION INPUT ---\n")
     print(verification_input)
 
-    # � � If nothing valid found
+    # â — If nothing valid found
     if not verification_input:
         return {
             "preview_text": text[:500],
@@ -74,14 +74,14 @@ async def upload_pdf(file: UploadFile = File(...)):
             "message": "No valid abstracts found (query too noisy)"
         }
 
-    # ✅ STEP 5: Gemini/Groq verification & total score calc
+    # âœ… STEP 5: Gemini/Groq verification & total score calc
     verification_output = verify_all_claims(verification_input)
         
-    # ✅ STEP 6: Execute Crew AI Roadmap Agent
+    # âœ… STEP 6: Execute Crew AI Roadmap Agent
     from backend.crew.crew import run_roadmap_agent
     roadmap_output = run_roadmap_agent(verification_output)
 
-    # ✅ STEP 7: Fetch one real paper per roadmap step
+    # âœ… STEP 7: Fetch one real paper per roadmap step
     from backend.services.paper_fetcher import fetch_paper_metadata
     if roadmap_output and isinstance(roadmap_output, list):
         for step in roadmap_output:
@@ -111,3 +111,4 @@ async def upload_pdf(file: UploadFile = File(...)):
         "verification": verification_output,
         "roadmap": roadmap_output
     }
+
