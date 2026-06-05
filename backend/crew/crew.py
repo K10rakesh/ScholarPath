@@ -1,3 +1,10 @@
+# Monkey-patch CrewAI to disable cache_breakpoint for Groq
+try:
+    import crewai.llms.cache as _crewai_cache
+    _crewai_cache.mark_cache_breakpoint = lambda msg: msg
+except ImportError:
+    pass
+
 from crewai import Crew
 from backend.crew.tasks import create_verification_task, create_roadmap_task
 import json
