@@ -12,6 +12,33 @@ jobs:
     steps:
       - name: Ping Supabase API to keep project alive
         run: |
-          curl -s -X GET "${{ secrets.SUPABASE_URL }}/rest/v1/" \
-            -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
-            -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}"
+          URL="${{ secrets.SUPABASE_URL }}"
+          if [ -z "$URL" ]; then
+            URL="${{ secrets.VITE_SUPABASE_URL }}"
+          fi
+          
+          KEY="${{ secrets.SUPABASE_ANON_KEY }}"
+          if [ -z "$KEY" ]; then
+            KEY="${{ secrets.VITE_SUPABASE_ANON_KEY }}"
+          fi
+          
+          if [ -z "$URL" ] || [ -z "$KEY" ]; then
+            echo "❌ Error: Supabase URL or Anon Key secret is not configured in GitHub Secrets."
+            exit 1
+          fi
+          
+          echo "Pinging database table 'uploads_history'..."
+          STATUS_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X GET "$URL/rest/v1/uploads_history?limit=1" \
+            -H "apikey: $KEY" \
+            -H "Authorization: Bearer $KEY")
+          
+          echo "HTTP Status Code: $STATUS_CODE"
+          
+          if [ "$STATUS_CODE" -eq 200 ] || [ "$STATUS_CODE" -eq 204 ]; then
+            echo "✅ Successfully queried the database table."
+          else
+            echo "❌ Failed to query database (HTTP $STATUS_CODE). Check your credentials and table schema."
+            exit 1
+          fi
+
