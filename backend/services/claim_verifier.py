@@ -56,7 +56,7 @@ def verify_claim_with_gemini(claim, metadata):
         """
 
         response = client.chat.completions.create(
-            model="llama-3.1-8b-instant", # Free and extremely fast Groq model
+            model="openai/gpt-oss-20b", # Free and extremely fast Groq model
             messages=[{"role": "user", "content": prompt}],
             temperature=0,
         )

@@ -11,7 +11,7 @@ verification_agent = Agent(
         "how strongly the claim is supported."
     ),
     verbose=True,
-    llm="groq/llama-3.1-8b-instant"
+    llm="groq/openai/gpt-oss-20b"
 )
 
 roadmap_agent = Agent(
@@ -23,6 +23,6 @@ roadmap_agent = Agent(
         "of high-level educational milestones or study blocks so the user can understand these topics deeply."
     ),
     verbose=True,
-    llm="groq/llama-3.1-8b-instant"
+    llm="groq/openai/gpt-oss-20b"
 )
 
