@@ -136,7 +136,6 @@ python-dateutil==2.9.0.post0
 python-dotenv==1.2.3
 python-multipart==0.0.20
 python-slugify==8.0.4
-pywin32==312
 PyYAML==6.0.3
 rank-bm25==0.2.2
 RapidFuzz==3.14.5
